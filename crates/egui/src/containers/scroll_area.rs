@@ -1129,6 +1129,8 @@ impl Prepared {
 
             state.scroll_bar_interaction[d] = response.hovered() || response.dragged();
 
+            // MEMBRANE: Prevent dragging the scrollbar while resizing a side-panel right next to it.
+            // .filter(|_| response.dragged())
             if let Some(pointer_pos) = response.interact_pointer_pos() {
                 let scroll_start_offset_from_top_left = state.scroll_start_offset_from_top_left[d]
                     .get_or_insert_with(|| {
