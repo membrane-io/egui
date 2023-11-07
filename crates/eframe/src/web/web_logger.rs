@@ -1,19 +1,20 @@
 /// Implements [`log::Log`] to log messages to `console.log`, `console.warn`, etc.
 pub struct WebLogger {
     filter: log::LevelFilter,
+    context: String,
 }
 
 impl WebLogger {
     /// Install a new `WebLogger`, piping all [`log`] events to the web console.
-    pub fn init(filter: log::LevelFilter) -> Result<(), log::SetLoggerError> {
+    pub fn init(filter: log::LevelFilter, context: String) -> Result<(), log::SetLoggerError> {
         log::set_max_level(filter);
-        log::set_boxed_logger(Box::new(Self::new(filter)))
+        log::set_boxed_logger(Box::new(Self::new(filter, context)))
     }
 
     /// Create a new [`WebLogger`] with the given filter,
     /// but don't install it.
-    pub fn new(filter: log::LevelFilter) -> Self {
-        Self { filter }
+    pub fn new(filter: log::LevelFilter, context: String) -> Self {
+        Self { filter, context }
     }
 }
 
@@ -46,9 +47,14 @@ impl log::Log for WebLogger {
 
         let msg = if let (Some(file), Some(line)) = (record.file(), record.line()) {
             let file = shorten_file_path(file);
-            format!("[{}] {file}:{line}: {}", record.target(), record.args())
+            format!(
+                "[{}] {} {file}:{line}: {}",
+                record.target(),
+                self.context,
+                record.args()
+            )
         } else {
-            format!("[{}] {}", record.target(), record.args())
+            format!("[{}] {} {}", record.target(), self.context, record.args())
         };
 
         match record.level() {
