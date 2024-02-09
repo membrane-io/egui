@@ -573,6 +573,13 @@ impl IdTypeMap {
         self.map.remove(&key);
     }
 
+    /// Returns true if the give id is contained in the map
+    #[inline]
+    pub fn contains<T: 'static>(&mut self, id: Id) -> bool {
+        let key = RawKey::new::<T>(id);
+        self.map.contains_key(&key)
+    }
+
     /// Remove and fetch the state of this type and id.
     #[inline]
     pub fn remove_temp<T: 'static + Default>(&mut self, id: Id) -> Option<T> {
