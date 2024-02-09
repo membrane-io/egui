@@ -28,11 +28,11 @@ pub(crate) struct State {
 
 impl State {
     pub fn load(ctx: &Context, id: Id) -> Option<Self> {
-        ctx.data_mut(|d| d.get_persisted(id))
+        ctx.data_mut(|d| d.get_temp(id))
     }
 
     pub fn store(self, ctx: &Context, id: Id) {
-        ctx.data_mut(|d| d.insert_persisted(id, self));
+        ctx.data_mut(|d| d.insert_temp(id, self));
     }
 }
 
@@ -52,6 +52,7 @@ pub struct Resize {
     pub(crate) default_size: Vec2,
 
     with_stroke: bool,
+    drag_corner: Align2,
 }
 
 impl Default for Resize {
@@ -64,6 +65,7 @@ impl Default for Resize {
             max_size: Vec2::splat(f32::INFINITY),
             default_size: vec2(320.0, 128.0), // TODO(emilk): preferred size of [`Resize`] area.
             with_stroke: true,
+            drag_corner: Align2::RIGHT_BOTTOM,
         }
     }
 }
@@ -139,6 +141,11 @@ impl Resize {
     #[inline]
     pub fn max_size(mut self, max_size: impl Into<Vec2>) -> Self {
         self.max_size = max_size.into();
+        self
+    }
+
+    pub fn drag_corner(mut self, corner: Align2) -> Self {
+        self.drag_corner = corner;
         self
     }
 
@@ -247,7 +254,12 @@ impl Resize {
             .at_most(self.max_size)
             .round_ui();
 
-        let mut user_requested_size = state.requested_size.take();
+        let rect = Rect::from_min_size(position, state.desired_size);
+
+        let mut user_requested_rect = state
+            .requested_size
+            .take()
+            .map(|size| Rect::from_min_size(position, size));
 
         let corner_id = self.resizable.any().then(|| id.with("__resize_corner"));
 
@@ -256,16 +268,33 @@ impl Resize {
             && let Some(pointer_pos) = corner_response.interact_pointer_pos()
         {
             // Respond to the interaction early to avoid frame delay.
-            user_requested_size = Some(pointer_pos - position + 0.5 * corner_response.rect.size());
+            // user_requested_size = Some(pointer_pos - position + 0.5 * corner_response.rect.size());
+            let corner_size = Vec2::splat(ui.visuals().resize_corner_size);
+            let corner_pos = match self.drag_corner {
+                Align2::LEFT_TOP => pointer_pos - corner_size * 0.5,
+                Align2::LEFT_BOTTOM => {
+                    pointer_pos + vec2(-corner_size.x, corner_size.y) * 0.5
+                }
+                Align2::RIGHT_TOP => {
+                    pointer_pos + vec2(corner_size.x, -corner_size.y) * 0.5
+                }
+                Align2::RIGHT_BOTTOM => pointer_pos + corner_size * 0.5,
+                _ => panic!("Invalid corner alignment"),
+            };
+
+            let mut requested_rect = rect;
+            requested_rect.set_corner(corner_pos, self.drag_corner);
+            user_requested_rect = Some(requested_rect);
         }
 
-        let is_actively_resizing = user_requested_size.is_some();
+        let is_actively_resizing = user_requested_rect.is_some();
 
         // Drag just started: we don't yet know what the content's minimum width is.
         // Run a one-frame sizing pass below to discover it.
         let needs_sizing_pass = is_actively_resizing && state.min_content_width.is_none();
 
-        if let Some(mut user_requested_size) = user_requested_size {
+        if let Some(user_requested_rect) = user_requested_rect {
+            let mut user_requested_size = user_requested_rect.size();
             if let Some(min_width) = state.min_content_width {
                 user_requested_size.x = user_requested_size.x.at_least(min_width);
             }
@@ -293,6 +322,9 @@ impl Resize {
         let inner_rect = if needs_sizing_pass {
             ui.ctx().request_discard("Resize sizing pass");
             Rect::from_min_size(position, Vec2::new(self.min_size.x, state.desired_size.y))
+        } else if let Some(mut user_requested_rect) = user_requested_rect {
+            user_requested_rect.set_size_with_anchor(state.desired_size, self.drag_corner.flip());
+            user_requested_rect
         } else {
             Rect::from_min_size(position, state.desired_size)
         };
@@ -376,12 +408,26 @@ impl Resize {
 
         let corner_response = if let Some(corner_id) = corner_id {
             // We do the corner interaction last to place it on top of the content:
+            let rect = Rect::from_min_size(content_ui.min_rect().left_top(), state.desired_size);
             let corner_size = Vec2::splat(ui.visuals().resize_corner_size);
-            let corner_rect = Rect::from_min_size(
-                content_ui.min_rect().left_top() + size - corner_size,
-                corner_size,
-            );
+            // let corner_rect = Rect::from_min_size(
+            //     content_ui.min_rect().left_top() + size - corner_size,
+            //     corner_size,
+            // );
+
+            let corner_rect = self.drag_corner.align_size_within_rect(corner_size, rect);
             Some(ui.interact(corner_rect, corner_id, Sense::drag()))
+
+            // let corner_response = ui.ctx().interact(
+            //     ui.clip_rect(),
+            //     ui.spacing().item_spacing,
+            //     ui.layer_id(),
+            //     // LayerId::new(Order::Foreground, ui.id()),
+            //     id,
+            //     corner_rect,
+            //     Sense::drag(),
+            //     ui.is_enabled(),
+            // );
         } else {
             None
         };
@@ -400,10 +446,15 @@ impl Resize {
         }
 
         if let Some(corner_response) = corner_response {
-            paint_resize_corner(ui, &corner_response);
+            paint_resize_corner(ui, &corner_response, self.drag_corner);
 
             if corner_response.hovered() || corner_response.dragged() {
-                ui.set_cursor_icon(CursorIcon::ResizeNwSe);
+                let resize_cursor = match self.drag_corner {
+                    Align2::LEFT_TOP | Align2::RIGHT_BOTTOM => CursorIcon::ResizeNwSe,
+                    Align2::LEFT_BOTTOM | Align2::RIGHT_TOP => CursorIcon::ResizeNeSw,
+                    _ => panic!("Invalid corner alignment"),
+                };
+                ui.set_cursor_icon(resize_cursor);
             }
         }
 
@@ -428,9 +479,9 @@ impl Resize {
 use emath::GuiRounding as _;
 use epaint::Stroke;
 
-pub fn paint_resize_corner(ui: &Ui, response: &Response) {
+pub fn paint_resize_corner(ui: &Ui, response: &Response, corner: Align2) {
     let stroke = ui.style().interact(response).fg_stroke;
-    paint_resize_corner_with_style(ui, &response.rect, stroke.color, Align2::RIGHT_BOTTOM);
+    paint_resize_corner_with_style(ui, &response.rect, stroke.color, corner);
 }
 
 pub fn paint_resize_corner_with_style(
