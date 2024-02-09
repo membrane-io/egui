@@ -115,11 +115,13 @@ pub struct Painter {
 ///
 /// See the [`custom3d_glow`](https://github.com/emilk/egui/blob/master/crates/egui_demo_app/src/apps/custom3d_wgpu.rs) demo source for a detailed usage example.
 pub struct CallbackFn {
-    f: Box<dyn Fn(PaintCallbackInfo, &Painter) + Sync + Send>,
+    f: Box<dyn (Fn(PaintCallbackInfo, &Painter) -> bool) + Sync + Send>,
 }
 
 impl CallbackFn {
-    pub fn new<F: Fn(PaintCallbackInfo, &Painter) + Sync + Send + 'static>(callback: F) -> Self {
+    pub fn new<F: Fn(PaintCallbackInfo, &Painter) -> bool + Sync + Send + 'static>(
+        callback: F,
+    ) -> Self {
         let f = Box::new(callback);
         Self { f }
     }
@@ -442,16 +444,21 @@ impl Painter {
                             );
                         }
 
-                        if let Some(callback) = callback.callback.downcast_ref::<CallbackFn>() {
-                            (callback.f)(info, self);
+                        let should_reset_state = if let Some(callback) =
+                            callback.callback.downcast_ref::<CallbackFn>()
+                        {
+                            (callback.f)(info, self)
                         } else {
                             log::warn!("Warning: Unsupported render callback. Expected egui_glow::CallbackFn");
-                        }
+                            false
+                        };
 
                         check_for_gl_error!(&self.gl, "callback");
 
                         // Restore state:
-                        unsafe { self.prepare_painting(screen_size_px, pixels_per_point) };
+                        if should_reset_state {
+                            unsafe { self.prepare_painting(screen_size_px, pixels_per_point) };
+                        }
                     }
                 }
             }
