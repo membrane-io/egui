@@ -1190,7 +1190,7 @@ impl Areas {
         self.areas.get(&id)
     }
 
-    pub(crate) fn get_mut(&mut self, id: Id) -> Option<&mut area::AreaState> {
+    pub fn get_mut(&mut self, id: Id) -> Option<&mut area::AreaState> {
         self.areas.get_mut(&id)
     }
 
