@@ -1314,9 +1314,10 @@ impl RowBreakCandidates {
             self.any
         } else {
             self.word_boundary()
+                // MEMBRANE: Prevent text from rendering vertically if there's not enough room for a single char.
                 .or(self.dash)
                 .or(self.punctuation)
-                .or(self.any)
+            // .or(self.any)
         }
     }
 
