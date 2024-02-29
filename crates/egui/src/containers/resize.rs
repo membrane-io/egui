@@ -195,6 +195,14 @@ impl Resize {
         self.with_stroke = with_stroke;
         self
     }
+
+    /// MEMBRANE: Sets the size of the [`Resize`] area from its id.
+    pub fn request_size(ctx: &Context, id: Id, size: Vec2) {
+        if let Some(mut state) = State::load(ctx, id) {
+            state.requested_size = Some(size);
+            state.store(ctx, id);
+        }
+    }
 }
 
 struct Prepared {
