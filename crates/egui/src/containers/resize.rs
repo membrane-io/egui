@@ -53,6 +53,8 @@ pub struct Resize {
 
     with_stroke: bool,
     drag_corner: Align2,
+
+    snap_to_size: Option<(Vec2, Vec2)>,
 }
 
 impl Default for Resize {
@@ -66,6 +68,7 @@ impl Default for Resize {
             default_size: vec2(320.0, 128.0), // TODO(emilk): preferred size of [`Resize`] area.
             with_stroke: true,
             drag_corner: Align2::RIGHT_BOTTOM,
+            snap_to_size: None,
         }
     }
 }
@@ -203,6 +206,12 @@ impl Resize {
         self
     }
 
+    #[inline]
+    pub fn snap_to_size(mut self, snap: Vec2, snap_offset: Vec2) -> Self {
+        self.snap_to_size = Some((snap, snap_offset));
+        self
+    }
+
     /// MEMBRANE: Sets the size of the [`Resize`] area from its id.
     pub fn request_size(ctx: &Context, id: Id, size: Vec2) {
         if let Some(mut state) = State::load(ctx, id) {
@@ -299,6 +308,12 @@ impl Resize {
                 user_requested_size.x = user_requested_size.x.at_least(min_width);
             }
             state.desired_size = user_requested_size;
+
+            // MEMBRANE: Snap to dashboard grid
+            if let Some((snap, snap_offset)) = self.snap_to_size {
+                state.desired_size =
+                    ((state.desired_size) / snap).round() * snap - snap_offset * 2.0;
+            }
         } else {
             // We are not being actively resized, so auto-expand to include size of last frame.
             // This prevents auto-shrinking if the contents contain width-filling widgets (separators etc)
