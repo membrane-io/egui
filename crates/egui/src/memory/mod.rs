@@ -1245,6 +1245,10 @@ impl Areas {
         self.areas.get(&id)
     }
 
+    pub fn remove(&mut self, id: Id) {
+        self.areas.remove(&id);
+    }
+
     pub fn get_mut(&mut self, id: Id) -> Option<&mut area::State> {
         self.areas.get_mut(&id)
     }
