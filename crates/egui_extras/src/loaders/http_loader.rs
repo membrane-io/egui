@@ -60,9 +60,10 @@ impl BytesLoader for EhttpLoader {
     }
 
     fn load(&self, ctx: &egui::Context, uri: &str) -> BytesLoadResult {
-        if !starts_with_one_of(uri, PROTOCOLS) {
-            return Err(LoadError::NotSupported);
-        }
+        // MEMBRANE: this check was disabled so we can load relative URLs
+        // if !starts_with_one_of(uri, PROTOCOLS) {
+        //     return Err(LoadError::NotSupported);
+        // }
 
         let mut cache = self.cache.lock();
         if let Some(entry) = cache.get(uri).cloned() {
