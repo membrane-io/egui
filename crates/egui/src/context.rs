@@ -405,6 +405,9 @@ struct ContextImpl {
     /// so they are never dropped in the middle of one.
     reload_fonts: bool,
 
+    /// MEMBRANE: increased each time the font atlas changes so we can drop any cached galleys.
+    font_generation: usize,
+
     memory: Memory,
     animation_manager: AnimationManager,
 
@@ -625,6 +628,7 @@ impl ContextImpl {
         let fonts = self.fonts.get_or_insert_with(|| {
             log::trace!("Creating new Fonts");
 
+            self.font_generation += 1;
             is_new = true;
             profiling::scope!("Fonts::new");
             let mut fonts = Fonts::new(text_options, self.font_definitions.clone())
@@ -636,7 +640,9 @@ impl ContextImpl {
 
         {
             profiling::scope!("Fonts::begin_pass");
-            fonts.begin_pass(text_options, ViewportKey::new(viewport_id.0.value()));
+            if fonts.begin_pass(text_options, ViewportKey::new(viewport_id.0.value())) {
+                self.font_generation += 1;
+            }
         }
     }
 

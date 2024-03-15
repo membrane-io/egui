@@ -174,19 +174,25 @@ impl Fonts {
     ///
     /// This function will react to changes in [`TextOptions`],
     /// as well as notice when the font atlas is getting full, and handle that.
-    pub fn begin_pass(&mut self, options: TextOptions, viewport_key: ViewportKey) {
+    ///
+    /// MEMBRANE: returns `true` when the glyphs in the atlas became invalid.
+    pub fn begin_pass(&mut self, options: TextOptions, viewport_key: ViewportKey) -> bool {
+        let mut atlas_invalidated = false;
         if self.fonts.options() != &options {
             self.fonts.set_options(options);
             self.galley_caches.clear(); // Galleys point into the old atlas.
+            atlas_invalidated = true;
         } else if 0.8 < self.fonts.glyphs.fill_ratio() {
             // The parsed faces are still fine; only the bitmaps need to go.
             self.fonts.glyphs.clear();
             self.galley_caches.clear(); // Galleys point into the old atlas.
+            atlas_invalidated = true;
         }
 
         let viewport_cache = self.galley_caches.entry(viewport_key).or_default();
         viewport_cache.cache.flush_cache();
         viewport_cache.used_since_begin_pass = false;
+        atlas_invalidated
     }
 
     /// Has any text been laid out in this viewport since its last [`Self::begin_pass`]?
