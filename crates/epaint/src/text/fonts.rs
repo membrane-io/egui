@@ -441,7 +441,7 @@ impl Fonts {
     ///
     /// This function will react to changes in `pixels_per_point` and `max_texture_side`,
     /// as well as notice when the font atlas is getting full, and handle that.
-    pub fn begin_pass(&self, pixels_per_point: f32, max_texture_side: usize) {
+    pub fn begin_pass(&self, pixels_per_point: f32, max_texture_side: usize) -> bool {
         let mut fonts_and_cache = self.0.lock();
 
         let pixels_per_point_changed = fonts_and_cache.fonts.pixels_per_point != pixels_per_point;
@@ -460,6 +460,7 @@ impl Fonts {
         }
 
         fonts_and_cache.galley_cache.flush_cache();
+        needs_recreate
     }
 
     /// Call at the end of each frame (before painting) to get the change to the font texture since last call.

@@ -402,6 +402,9 @@ struct ContextImpl {
     fonts: std::collections::BTreeMap<OrderedFloat<f32>, Fonts>,
     font_definitions: FontDefinitions,
 
+    /// MEMBRANE: increased each time the font atlas changes so we can drop any cached galleys.
+    font_generation: usize,
+
     memory: Memory,
     animation_manager: AnimationManager,
 
@@ -602,6 +605,7 @@ impl ContextImpl {
                 #[cfg(feature = "log")]
                 log::trace!("Creating new Fonts for pixels_per_point={pixels_per_point}");
 
+                self.font_generation += 1;
                 is_new = true;
                 profiling::scope!("Fonts::new");
                 Fonts::new(
@@ -613,7 +617,9 @@ impl ContextImpl {
 
         {
             profiling::scope!("Fonts::begin_pass");
-            fonts.begin_pass(pixels_per_point, max_texture_side);
+            if fonts.begin_pass(pixels_per_point, max_texture_side) {
+                self.font_generation += 1;
+            }
         }
 
         if is_new && self.memory.options.preload_font_glyphs {
