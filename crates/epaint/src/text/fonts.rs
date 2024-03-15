@@ -569,7 +569,7 @@ impl Fonts {
     ///
     /// This function will react to changes in [`TextOptions`],
     /// as well as notice when the font atlas is getting full, and handle that.
-    pub fn begin_pass(&mut self, options: TextOptions) {
+    pub fn begin_pass(&mut self, options: TextOptions) -> bool {
         let text_options_changed = self.fonts.options() != &options;
         let font_atlas_almost_full = self.fonts.atlas.fill_ratio() > 0.8;
         let needs_recreate = text_options_changed || font_atlas_almost_full;
@@ -584,6 +584,7 @@ impl Fonts {
         }
 
         self.galley_cache.flush_cache();
+        needs_recreate
     }
 
     /// Call at the end of each frame (before painting) to get the change to the font texture since last call.
