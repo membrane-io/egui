@@ -368,6 +368,9 @@ struct ContextImpl {
     fonts: Option<Fonts>,
     font_definitions: FontDefinitions,
 
+    /// MEMBRANE: increased each time the font atlas changes so we can drop any cached galleys.
+    font_generation: usize,
+
     memory: Memory,
     animation_manager: AnimationManager,
 
@@ -573,6 +576,7 @@ impl ContextImpl {
         let fonts = self.fonts.get_or_insert_with(|| {
             log::trace!("Creating new Fonts");
 
+            self.font_generation += 1;
             is_new = true;
             profiling::scope!("Fonts::new");
             Fonts::new(text_options, self.font_definitions.clone())
@@ -580,7 +584,9 @@ impl ContextImpl {
 
         {
             profiling::scope!("Fonts::begin_pass");
-            fonts.begin_pass(text_options);
+            if fonts.begin_pass(text_options) {
+                self.font_generation += 1;
+            ;
         }
     }
 
