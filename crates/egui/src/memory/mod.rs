@@ -105,10 +105,14 @@ pub struct Memory {
     /// * [`crate::Context::set_transform_layer`]
     /// * [`crate::Context::layer_transform_to_global`]
     /// * [`crate::Context::layer_transform_from_global`]
+    // MEMBRANE: don't persist area state
+    #[cfg_attr(feature = "persistence", serde(skip))]
     pub to_global: HashMap<LayerId, TSTransform>,
 
     // -------------------------------------------------
     // Per-viewport:
+    // MEMBRANE: don't persist area state
+    #[cfg_attr(feature = "persistence", serde(skip))]
     areas: ViewportIdMap<Areas>,
 
     #[cfg_attr(feature = "persistence", serde(skip))]
