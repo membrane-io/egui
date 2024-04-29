@@ -382,7 +382,7 @@ impl CodeTheme {
             formats: enum_map::enum_map![
                 TokenType::Comment => TextFormat::simple(font_id.clone(), Color32::from_gray(120)),
                 TokenType::Keyword => TextFormat::simple(font_id.clone(), Color32::from_rgb(255, 100, 100)),
-                TokenType::Literal => TextFormat::simple(font_id.clone(), Color32::from_rgb(87, 165, 171)),
+                TokenType::Literal => TextFormat::simple(font_id.clone(), Color32::from_rgb(240, 240, 240)),
                 TokenType::StringLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(109, 147, 226)),
                 TokenType::Punctuation => TextFormat::simple(font_id.clone(), Color32::LIGHT_GRAY),
                 TokenType::Whitespace => TextFormat::simple(font_id.clone(), Color32::TRANSPARENT),
@@ -656,6 +656,13 @@ impl Highlighter {
                     theme.formats[TokenType::StringLiteral].clone(),
                 );
                 text = &text[end..];
+            } else if text.starts_with(|c: char| c.is_ascii_digit()) {
+                let end = text[1..]
+                    .find(|c: char| !c.is_ascii_digit())
+                    .map_or_else(|| text.len(), |i| i + 1);
+                let word = &text[..end];
+                job.append(word, 0.0, theme.formats[TokenType::StringLiteral].clone());
+                text = &text[end..];
             } else if text.starts_with(|c: char| c.is_ascii_alphanumeric()) {
                 let end = text[1..]
                     .find(|c: char| !c.is_ascii_alphanumeric())
@@ -713,6 +720,7 @@ impl Language {
             "c" | "h" | "hpp" | "cpp" | "c++" => Some(Self::cpp()),
             "py" | "python" => Some(Self::python()),
             "rs" | "rust" => Some(Self::rust()),
+            "ts" | "typescript" => Some(Self::typescript()),
             "toml" => Some(Self::toml()),
             _ => {
                 None // unsupported language
@@ -826,6 +834,79 @@ impl Language {
                 "while",
                 "xor_eq",
                 "xor",
+            ]
+            .into_iter()
+            .collect(),
+        }
+    }
+
+    fn typescript() -> Self {
+        Self {
+            double_slash_comments: true,
+            hash_comments: false,
+            keywords: [
+                "await",
+                "async",
+                "break",
+                "case",
+                "catch",
+                "class",
+                "const",
+                "continue",
+                "debugger",
+                "default",
+                "delete",
+                "do",
+                "else",
+                "enum",
+                "export",
+                "extends",
+                "false",
+                "finally",
+                "for",
+                "function",
+                "if",
+                "import",
+                "in",
+                "instanceof",
+                "new",
+                "null",
+                "return",
+                "super",
+                "switch",
+                "this",
+                "throw",
+                "true",
+                "try",
+                "typeof",
+                "var",
+                "void",
+                "while",
+                "with",
+                "as",
+                "implements",
+                "interface",
+                "let",
+                "package",
+                "private",
+                "protected",
+                "public",
+                "static",
+                "yield",
+                "any",
+                "boolean",
+                "constructor",
+                "declare",
+                "get",
+                "module",
+                "require",
+                "number",
+                "set",
+                "string",
+                "symbol",
+                "type",
+                "from",
+                "of",
             ]
             .into_iter()
             .collect(),
