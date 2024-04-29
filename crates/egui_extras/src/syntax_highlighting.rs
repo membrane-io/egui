@@ -129,7 +129,7 @@ fn monospace_font_size(style: &egui::Style) -> f32 {
 #[cfg(not(feature = "syntect"))]
 #[derive(Clone, Copy, PartialEq, enum_map::Enum)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-enum TokenType {
+pub enum TokenType {
     Comment,
     Keyword,
     Literal,
@@ -219,7 +219,7 @@ pub struct CodeTheme {
     font_id: egui::FontId,
 
     #[cfg(not(feature = "syntect"))]
-    formats: enum_map::EnumMap<TokenType, egui::TextFormat>,
+    pub formats: enum_map::EnumMap<TokenType, egui::TextFormat>,
 }
 
 impl Default for CodeTheme {
