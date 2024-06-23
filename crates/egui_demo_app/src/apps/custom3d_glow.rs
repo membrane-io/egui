@@ -65,6 +65,7 @@ impl Custom3d {
 
         let cb = egui_glow::CallbackFn::new(move |_info, painter| {
             rotating_triangle.lock().paint(painter.gl(), angle);
+            true
         });
 
         let callback = egui::PaintCallback {
