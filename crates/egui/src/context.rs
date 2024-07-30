@@ -2353,7 +2353,7 @@ impl Context {
     // ---------------------------------------------------------------------
 
     /// Constrain the position of a window/area so it fits within the provided boundary.
-    pub(crate) fn constrain_window_rect_to_area(window: Rect, area: Rect) -> Rect {
+    pub fn constrain_window_rect_to_area(window: Rect, area: Rect) -> Rect {
         let mut pos = window.min;
 
         // Constrain to screen, unless window is too large to fit:

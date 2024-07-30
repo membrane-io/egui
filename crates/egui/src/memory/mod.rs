@@ -848,7 +848,7 @@ impl Memory {
     /// usually already been rendered by the time another widget
     /// claims focus, so the loss signal can only reach it on its
     /// next render pass.
-    pub(crate) fn lost_focus(&self, id: Id) -> bool {
+    pub fn lost_focus(&self, id: Id) -> bool {
         let had_recent_focus = self
             .focus()
             .map(|f| f.id_previous_frame == Some(id) || f.id_two_frames_ago == Some(id))
