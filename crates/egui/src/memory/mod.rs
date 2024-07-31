@@ -1159,7 +1159,7 @@ impl Areas {
         self.areas.len()
     }
 
-    pub(crate) fn get(&self, id: Id) -> Option<&area::AreaState> {
+    pub fn get(&self, id: Id) -> Option<&area::AreaState> {
         self.areas.get(&id)
     }
 
@@ -1167,11 +1167,11 @@ impl Areas {
         self.areas.remove(&id);
     }
 
-    pub fn get_mut(&mut self, id: Id) -> Option<&mut area::State> {
+    pub fn get_mut(&mut self, id: Id) -> Option<&mut area::AreaState> {
         self.areas.get_mut(&id)
     }
 
-    /// All layers back-to-front, top is last.
+    /// Back-to-front, top is last.
     pub(crate) fn order(&self) -> &[LayerId] {
         &self.order
     }
