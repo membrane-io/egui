@@ -989,7 +989,80 @@ fn install_drag_and_drop(runner_ref: &WebRunner, target: &EventTarget) -> Result
         }
     })?;
 
+    // MEMBRANE: Support dragging things natively outside of the canvas.
+    runner_ref.add_event_listener(target, "dragstart", |event: web_sys::DragEvent, runner| {
+        if let Some(data_transfer) = event.data_transfer() {
+            runner.input.raw.native_drag_starting = true;
+
+            let pos = pos_from_mouse_event(runner.canvas(), &event, runner.egui_ctx());
+            runner.input.raw.events.push(egui::Event::PointerMoved(pos));
+
+            // Run the logic synchronously to allow the app to set the DragAndDrop payload.
+            runner.logic();
+
+            runner.input.raw.native_drag_starting = false;
+
+            if let Some(data) = runner.native_drag_payload.take() {
+                if let Err(err) = set_transfer_text(data.as_str(), data_transfer) {
+                    log::error!("Failed to set transfer text: {:?}", err);
+                }
+            } else {
+                // Don't let the browser drag the entire canvas
+                event.stop_propagation();
+                event.prevent_default();
+            }
+            runner.needs_repaint.repaint_asap();
+        }
+    })?;
+
+    // MEMBRANE: Support dragging things natively outside of the canvas.
+    runner_ref.add_event_listener(target, "dragend", |event: web_sys::DragEvent, runner| {
+        runner.input.raw.hovered_items.clear();
+        if let Some(button) = button_from_mouse_event(&event) {
+            // Send this event because pointerup is not fired when dragging
+            let pos = pos_from_mouse_event(runner.canvas(), &event, runner.egui_ctx());
+            let modifiers = runner.input.raw.modifiers;
+            let events = &mut runner.input.raw.events;
+            events.push(egui::Event::PointerButton {
+                pos,
+                button,
+                pressed: false,
+                modifiers,
+            });
+            runner.needs_repaint.repaint_asap();
+            clean_up_transfer_text();
+        }
+    })?;
+
     Ok(())
+}
+
+fn set_transfer_text(data: &str, data_transfer: web_sys::DataTransfer) -> Result<(), &'static str> {
+    let window = web_sys::window().ok_or("Failed to get window")?;
+    let document = window.document().ok_or("Failed to get document")?;
+    let element = document
+        .create_element("div")
+        .map_err(|_| "Failed to create element")?;
+    element.set_id("eframe-dragged-element");
+    document
+        .body()
+        .ok_or("Failed to get document body")?
+        .append_child(&element)
+        .map_err(|_| "Failed to append child element")?;
+    element.set_text_content(Some(data));
+    data_transfer
+        .set_data("text/plain", &data)
+        .map_err(|_| "Failed to set data transfer")?;
+    data_transfer.set_drag_image(&element, 0, 0);
+    Ok(())
+}
+
+fn clean_up_transfer_text() {
+    let window = web_sys::window().unwrap();
+    let document = window.document().unwrap();
+    if let Some(element) = document.get_element_by_id("eframe-dragged-element") {
+        element.remove();
+    }
 }
 
 /// A `ResizeObserver` is used to observe changes to the size of the canvas.
