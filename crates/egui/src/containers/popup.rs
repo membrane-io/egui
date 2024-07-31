@@ -607,8 +607,16 @@ impl<'a> Popup<'a> {
         // If a submenu is open, the CloseBehavior is handled there
         let is_any_submenu_open = !MenuState::is_deepest_open_sub_menu(&response.response.ctx, id);
 
+        // MEMBRANE: close any popup/menu when the app loses focus
+        let lost_window_focus = ctx.input(|i| {
+            i.events
+                .iter()
+                .any(|e| matches!(e, crate::Event::WindowFocused(false)))
+        });
+
         let should_close = (!is_any_submenu_open && closed_by_click)
             || ctx.input(|i| i.key_pressed(Key::Escape))
+            || lost_window_focus
             || response.response.should_close();
 
         if should_close {

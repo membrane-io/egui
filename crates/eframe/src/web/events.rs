@@ -65,6 +65,7 @@ pub(crate) fn install_event_handlers(runner_ref: &WebRunner) -> Result<(), JsVal
     let document = window.document().unwrap();
     let canvas = runner_ref.try_lock().unwrap().canvas().clone();
 
+    // MEMBRANE: for some reason canvas doesn't get these events in the vscode iframe so use window instead.
     install_blur_focus(runner_ref, &document)?;
     install_blur_focus(runner_ref, &canvas)?;
 
