@@ -72,6 +72,10 @@ pub struct RawInput {
     /// been disabled in [`crate::viewport::ViewportBuilder`].
     pub dropped_items: Vec<DroppedItem>,
 
+    /// MEMBRANE: True for one frame while handling the dragstart DOM event. The app must set native_drag_payoad on this
+    /// frame so it can be picked up by the browser.
+    pub native_drag_starting: bool,
+
     /// The native window has the keyboard focus (i.e. is receiving key presses).
     ///
     /// False when the user alt-tab away from the application, for instance.
@@ -96,6 +100,7 @@ impl Default for RawInput {
             events: vec![],
             hovered_items: Default::default(),
             dropped_items: Default::default(),
+            native_drag_starting: false,
             focused: true, // integrations opt into global focus tracking
             system_theme: None,
             safe_area_insets: Default::default(),
@@ -131,6 +136,7 @@ impl RawInput {
             events: std::mem::take(&mut self.events),
             hovered_items: self.hovered_items.clone(),
             dropped_items: std::mem::take(&mut self.dropped_items),
+            native_drag_starting: self.native_drag_starting,
             focused: self.focused,
             system_theme: self.system_theme,
         }
@@ -149,6 +155,7 @@ impl RawInput {
             mut events,
             mut hovered_items,
             mut dropped_items,
+            native_drag_starting,
             focused,
             system_theme,
             safe_area_insets: safe_area,
@@ -164,6 +171,7 @@ impl RawInput {
         self.events.append(&mut events);
         self.hovered_items.append(&mut hovered_items);
         self.dropped_items.append(&mut dropped_items);
+        self.native_drag_starting = native_drag_starting;
         self.focused = focused;
         self.system_theme = system_theme;
         self.safe_area_insets = safe_area;
@@ -183,6 +191,7 @@ impl RawInput {
             events,
             hovered_items,
             dropped_items,
+            native_drag_starting,
             focused,
             system_theme,
             safe_area_insets: safe_area,
@@ -213,6 +222,7 @@ impl RawInput {
         ui.label(format!("modifiers: {modifiers:#?}"));
         ui.label(format!("hovered_items: {}", hovered_items.len()));
         ui.label(format!("dropped_items: {}", dropped_items.len()));
+        ui.label(format!("native_drag_starting: {}", native_drag_starting));
         ui.label(format!("focused: {focused}"));
         ui.label(format!("system_theme: {system_theme:?}"));
         ui.label(format!("safe_area: {safe_area:?}"));

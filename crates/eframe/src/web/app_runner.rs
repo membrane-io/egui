@@ -18,6 +18,10 @@ pub struct AppRunner {
     last_save_time: f64,
     pub(crate) text_agent: TextAgent,
 
+    // MEMBRANE: support native dragging.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) native_drag_payload: Option<String>,
+
     // If not empty, the painter should capture n frames from now.
     // zero means capture the exact next frame.
     screenshot_commands_with_frame_delay: Vec<(UserData, usize)>,
@@ -158,6 +162,9 @@ impl AppRunner {
             needs_repaint,
             last_save_time: now_sec(),
             text_agent,
+            // MEMBRANE: support native dragging.
+            #[cfg(target_arch = "wasm32")]
+            native_drag_payload: None,
             screenshot_commands_with_frame_delay: vec![],
             textures_delta: Default::default(),
             clipped_primitives: None,
@@ -359,7 +366,7 @@ impl AppRunner {
         self.frame.info.cpu_usage = Some(cpu_usage_seconds);
     }
 
-    fn handle_platform_output(&self, platform_output: egui::PlatformOutput) {
+    fn handle_platform_output(&mut self, platform_output: egui::PlatformOutput) {
         #[cfg(feature = "web_screen_reader")]
         if self.egui_ctx.options(|o| o.screen_reader) {
             super::screen_reader::speak(&platform_output.events_description());
@@ -371,6 +378,8 @@ impl AppRunner {
             cursor_image: _, // TODO(alextournai): support custom bitmap cursors on the web (via CSS `url(...)`)
             events: _,       // already handled
             mutable_text_under_cursor: _, // TODO(#4569): https://github.com/emilk/egui/issues/4569
+            #[cfg(target_arch = "wasm32")]
+            native_drag_payload,
             ime,
             accesskit_update: _,        // not currently implemented
             num_completed_passes: _,    // handled by `Context::run`
@@ -392,6 +401,16 @@ impl AppRunner {
         }
 
         super::set_cursor_icon(self.canvas(), cursor_icon);
+
+        #[cfg(not(web_sys_unstable_apis))]
+        let _ = copied_text;
+
+        // MEMBRANE: support native dragging. It's possible that the egui drag starts before the native dragstart event
+        // is fired by the DOM element, so we keep the payload here.
+        #[cfg(target_arch = "wasm32")]
+        if native_drag_payload.is_some() {
+            self.native_drag_payload = native_drag_payload;
+        }
 
         if self.has_focus() {
             // The eframe app has focus.
