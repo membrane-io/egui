@@ -344,6 +344,12 @@ impl Response {
         self.drag_started() && self.ctx.input(|i| i.pointer.button_down(button))
     }
 
+    /// MEMBRANE: Is a native drag starting on this widget?
+    #[inline]
+    pub fn native_drag_started(&self) -> bool {
+        self.contains_pointer() && self.ctx.input(|i| i.raw.native_drag_starting)
+    }
+
     /// The widget is being dragged.
     ///
     /// To find out which button(s), use [`Self::dragged_by`].
