@@ -68,14 +68,14 @@ pub struct RawInput {
     /// and/or the pointer (mouse/touch) with [`crate::Context::is_using_pointer`].
     pub events: Vec<Event>,
 
-    /// Dragged files hovering over egui.
-    pub hovered_files: Vec<HoveredFile>,
+    /// Dragged files or strings hovering over egui.
+    pub hovered_items: Vec<HoveredItem>,
 
-    /// Dragged files dropped into egui.
+    /// Dragged files or strings dropped into egui.
     ///
     /// Note: when using `eframe` on Windows, this will always be empty if drag-and-drop support has
     /// been disabled in [`crate::viewport::ViewportBuilder`].
-    pub dropped_files: Vec<DroppedFile>,
+    pub dropped_items: Vec<DroppedItem>,
 
     /// The native window has the keyboard focus (i.e. is receiving key presses).
     ///
@@ -99,8 +99,8 @@ impl Default for RawInput {
             predicted_dt: 1.0 / 60.0,
             modifiers: Modifiers::default(),
             events: vec![],
-            hovered_files: Default::default(),
-            dropped_files: Default::default(),
+            hovered_items: Default::default(),
+            dropped_items: Default::default(),
             focused: true, // integrations opt into global focus tracking
             system_theme: None,
             safe_area_insets: Default::default(),
@@ -117,8 +117,8 @@ impl RawInput {
 
     /// Helper: move volatile (deltas and events), clone the rest.
     ///
-    /// * [`Self::hovered_files`] is cloned.
-    /// * [`Self::dropped_files`] is moved.
+    /// * [`Self::hovered_items`] is cloned.
+    /// * [`Self::dropped_items`] is moved.
     pub fn take(&mut self) -> Self {
         Self {
             viewport_id: self.viewport_id,
@@ -134,8 +134,8 @@ impl RawInput {
             predicted_dt: self.predicted_dt,
             modifiers: self.modifiers,
             events: std::mem::take(&mut self.events),
-            hovered_files: self.hovered_files.clone(),
-            dropped_files: std::mem::take(&mut self.dropped_files),
+            hovered_items: self.hovered_items.clone(),
+            dropped_items: std::mem::take(&mut self.dropped_items),
             focused: self.focused,
             system_theme: self.system_theme,
         }
@@ -152,8 +152,8 @@ impl RawInput {
             predicted_dt,
             modifiers,
             mut events,
-            mut hovered_files,
-            mut dropped_files,
+            mut hovered_items,
+            mut dropped_items,
             focused,
             system_theme,
             safe_area_insets: safe_area,
@@ -167,8 +167,8 @@ impl RawInput {
         self.predicted_dt = predicted_dt; // use latest dt
         self.modifiers = modifiers; // use latest
         self.events.append(&mut events);
-        self.hovered_files.append(&mut hovered_files);
-        self.dropped_files.append(&mut dropped_files);
+        self.hovered_items.append(&mut hovered_items);
+        self.dropped_items.append(&mut dropped_items);
         self.focused = focused;
         self.system_theme = system_theme;
         self.safe_area_insets = safe_area;
@@ -358,6 +358,22 @@ impl ViewportInfo {
     }
 }
 
+/// A File or String about to be dropped into egui.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum HoveredItem {
+    String(HoveredString),
+    File(HoveredFile),
+}
+
+/// A string about to be dropped into egui.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct HoveredString {
+    /// With the `eframe` web backend, this is set to the mime-type of the string (if available).
+    pub mime: String,
+}
+
 /// A file about to be dropped into egui.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -367,6 +383,25 @@ pub struct HoveredFile {
 
     /// With the `eframe` web backend, this is set to the mime-type of the file (if available).
     pub mime: String,
+}
+
+/// A file or string dropped into egui.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum DroppedItem {
+    String(DroppedString),
+    File(DroppedFile),
+}
+
+/// A string dropped into egui.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct DroppedString {
+    /// With the `eframe` web backend, this is set to the mime-type of the string (if available).
+    pub mime: String,
+
+    /// The contents of the string itself.
+    pub contents: String,
 }
 
 /// A file dropped into egui.
@@ -1148,8 +1183,8 @@ impl RawInput {
             predicted_dt,
             modifiers,
             events,
-            hovered_files,
-            dropped_files,
+            hovered_items,
+            dropped_items,
             focused,
             system_theme,
             safe_area_insets: safe_area,
@@ -1178,8 +1213,8 @@ impl RawInput {
         }
         ui.label(format!("predicted_dt: {:.1} ms", 1e3 * predicted_dt));
         ui.label(format!("modifiers: {modifiers:#?}"));
-        ui.label(format!("hovered_files: {}", hovered_files.len()));
-        ui.label(format!("dropped_files: {}", dropped_files.len()));
+        ui.label(format!("hovered_items: {}", hovered_items.len()));
+        ui.label(format!("dropped_files: {}", dropped_items.len()));
         ui.label(format!("focused: {focused}"));
         ui.label(format!("system_theme: {system_theme:?}"));
         ui.label(format!("safe_area: {safe_area:?}"));

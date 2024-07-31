@@ -413,7 +413,7 @@ impl State {
                 }
             }
             WindowEvent::HoveredFile(path) => {
-                self.egui_input.hovered_files.push(egui::HoveredFile {
+                self.egui_input.hovered_items.push(egui::HoveredFile {
                     path: Some(path.clone()),
                     ..Default::default()
                 });
@@ -423,15 +423,15 @@ impl State {
                 }
             }
             WindowEvent::HoveredFileCancelled => {
-                self.egui_input.hovered_files.clear();
+                self.egui_input.hovered_items.clear();
                 EventResponse {
                     repaint: true,
                     consumed: false,
                 }
             }
             WindowEvent::DroppedFile(path) => {
-                self.egui_input.hovered_files.clear();
-                self.egui_input.dropped_files.push(egui::DroppedFile {
+                self.egui_input.hovered_items.clear();
+                self.egui_input.dropped_items.push(egui::DroppedFile {
                     path: Some(path.clone()),
                     ..Default::default()
                 });
