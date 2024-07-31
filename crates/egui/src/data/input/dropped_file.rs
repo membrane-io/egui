@@ -1,3 +1,22 @@
+/// A file or string dropped into egui.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum DroppedItem {
+    String(DroppedString),
+    File(DroppedFile),
+}
+
+/// A string dropped into egui.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct DroppedString {
+    /// With the `eframe` web backend, this is set to the mime-type of the string (if available).
+    pub mime: String,
+
+    /// The contents of the string itself.
+    pub contents: String,
+}
+
 /// A file dropped into egui.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]

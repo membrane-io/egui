@@ -1,3 +1,19 @@
+/// A file or string about to be dropped into egui.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum HoveredItem {
+    String(HoveredString),
+    File(HoveredFile),
+}
+
+/// A string about to be dropped into egui.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct HoveredString {
+    /// With the `eframe` web backend, this is set to the mime-type of the string (if available).
+    pub mime: String,
+}
+
 /// A file about to be dropped into egui.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]

@@ -16,10 +16,10 @@ mod touch;
 mod viewport_info;
 
 pub use self::{
-    dropped_file::DroppedFile,
+    dropped_file::{DroppedFile, DroppedItem, DroppedString},
     event::Event,
     event_filter::EventFilter,
-    hovered_file::HoveredFile,
+    hovered_file::{HoveredFile, HoveredItem, HoveredString},
     ime_event::ImeEvent,
     keyboard_shortcut::KeyboardShortcut,
     modifier_names::ModifierNames,
