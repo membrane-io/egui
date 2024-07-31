@@ -1210,7 +1210,7 @@ impl Areas {
         self.areas.len()
     }
 
-    pub(crate) fn get(&self, id: Id) -> Option<&area::AreaState> {
+    pub fn get(&self, id: Id) -> Option<&area::AreaState> {
         self.areas.get(&id)
     }
 
