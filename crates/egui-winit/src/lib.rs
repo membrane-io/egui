@@ -1141,6 +1141,7 @@ impl State {
             accesskit_update,
             num_completed_passes: _,    // `egui::Context::run` handles this
             request_discard_reasons: _, // `egui::Context::run` handles this
+            native_drag_payload: _,
         } = platform_output;
 
         for command in commands {

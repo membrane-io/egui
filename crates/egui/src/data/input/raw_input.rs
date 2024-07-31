@@ -89,6 +89,10 @@ pub struct RawInput {
     /// MEMBRANE: dragged strings dropped into egui.
     pub dropped_strings: Vec<DroppedString>,
 
+    /// MEMBRANE: True for one frame while handling the dragstart DOM event. The app must set native_drag_payoad on this
+    /// frame so it can be picked up by the browser.
+    pub native_drag_starting: bool,
+
     /// The native window has the keyboard focus (i.e. is receiving key presses).
     ///
     /// False when the user alt-tab away from the application, for instance.
@@ -114,6 +118,7 @@ impl Default for RawInput {
             hovered_strings: Default::default(),
             dropped_files: Default::default(),
             dropped_strings: Default::default(),
+            native_drag_starting: false,
             focused: true, // integrations opt into global focus tracking
             system_theme: None,
             safe_area_insets: Default::default(),
@@ -152,6 +157,7 @@ impl RawInput {
             hovered_strings: self.hovered_strings.clone(),
             dropped_files: core::mem::take(&mut self.dropped_files),
             dropped_strings: core::mem::take(&mut self.dropped_strings),
+            native_drag_starting: self.native_drag_starting,
             focused: self.focused,
             system_theme: self.system_theme,
         }
@@ -171,6 +177,7 @@ impl RawInput {
             mut hovered_strings,
             mut dropped_files,
             mut dropped_strings,
+            native_drag_starting,
             focused,
             system_theme,
             safe_area_insets: safe_area,
@@ -187,6 +194,7 @@ impl RawInput {
         self.hovered_strings.append(&mut hovered_strings);
         self.dropped_files.append(&mut dropped_files);
         self.dropped_strings.append(&mut dropped_strings);
+        self.native_drag_starting = native_drag_starting;
         self.focused = focused;
         self.system_theme = system_theme;
         self.safe_area_insets = safe_area;
@@ -207,6 +215,7 @@ impl RawInput {
             hovered_strings,
             dropped_files,
             dropped_strings,
+            native_drag_starting,
             focused,
             system_theme,
             safe_area_insets: safe_area,
@@ -238,6 +247,7 @@ impl RawInput {
         ui.label(format!("hovered_strings: {}", hovered_strings.len()));
         ui.label(format!("dropped_files: {}", dropped_files.len()));
         ui.label(format!("dropped_strings: {}", dropped_strings.len()));
+        ui.label(format!("native_drag_starting: {}", native_drag_starting));
         ui.label(format!("focused: {focused}"));
         ui.label(format!("system_theme: {system_theme:?}"));
         ui.label(format!("safe_area: {safe_area:?}"));
