@@ -489,10 +489,10 @@ pub use self::{
     data::{
         Key, ScreenshotCallback,
         input::{
-            DroppedFile, DroppedFileHandle, Event, EventFilter, HoveredFile, ImeEvent,
-            KeyboardShortcut, ModifierNames, Modifiers, MouseWheelUnit, NUM_POINTER_BUTTONS,
-            PointerButton, RawInput, SafeAreaInsets, TouchDeviceId, TouchId, TouchPhase,
-            ViewportEvent, ViewportInfo,
+            DroppedFile, DroppedFileHandle, DroppedString, Event, EventFilter, HoveredFile,
+            HoveredString, ImeEvent, KeyboardShortcut, ModifierNames, Modifiers, MouseWheelUnit,
+            NUM_POINTER_BUTTONS, PointerButton, RawInput, SafeAreaInsets, TouchDeviceId, TouchId,
+            TouchPhase, ViewportEvent, ViewportInfo,
         },
         output::{
             self, CursorIcon, CustomCursorImage, FullOutput, LogicOutput, OpenUrl, OutputCommand,

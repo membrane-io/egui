@@ -8,3 +8,11 @@ pub struct HoveredFile {
     /// With the `eframe` web backend, this is set to the mime-type of the file (if available).
     pub mime: String,
 }
+
+/// MEMBRANE: a string about to be dropped into egui.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct HoveredString {
+    /// With the `eframe` web backend, this is set to the mime-type of the string (if available).
+    pub mime: String,
+}

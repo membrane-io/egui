@@ -1,6 +1,9 @@
 use crate::{OrderedViewportIdMap, Theme, ViewportId, ViewportIdMap, emath::Rect};
 
-use super::{DroppedFileHandle, Event, HoveredFile, SafeAreaInsets, ViewportInfo};
+use super::{
+    DroppedFileHandle, DroppedString, Event, HoveredFile, HoveredString, SafeAreaInsets,
+    ViewportInfo,
+};
 
 /// What the integrations provides to egui at the start of each frame.
 ///
@@ -63,6 +66,9 @@ pub struct RawInput {
     /// Dragged files hovering over egui.
     pub hovered_files: Vec<HoveredFile>,
 
+    /// MEMBRANE: dragged strings hovering over egui.
+    pub hovered_strings: Vec<HoveredString>,
+
     /// Dragged files dropped into egui.
     ///
     /// egui never reads the file contents.
@@ -79,6 +85,9 @@ pub struct RawInput {
     /// been disabled in [`crate::viewport::ViewportBuilder`].
     #[cfg_attr(feature = "serde", serde(skip))]
     pub dropped_files: Vec<DroppedFileHandle>,
+
+    /// MEMBRANE: dragged strings dropped into egui.
+    pub dropped_strings: Vec<DroppedString>,
 
     /// The native window has the keyboard focus (i.e. is receiving key presses).
     ///
@@ -102,7 +111,9 @@ impl Default for RawInput {
             predicted_dt: 1.0 / 60.0,
             events: vec![],
             hovered_files: Default::default(),
+            hovered_strings: Default::default(),
             dropped_files: Default::default(),
+            dropped_strings: Default::default(),
             focused: true, // integrations opt into global focus tracking
             system_theme: None,
             safe_area_insets: Default::default(),
@@ -121,6 +132,8 @@ impl RawInput {
     ///
     /// * [`Self::hovered_files`] is cloned.
     /// * [`Self::dropped_files`] is moved.
+    /// * [`Self::hovered_strings`] is cloned.
+    /// * [`Self::dropped_strings`] is moved.
     pub fn take(&mut self) -> Self {
         Self {
             viewport_id: self.viewport_id,
@@ -136,7 +149,9 @@ impl RawInput {
             predicted_dt: self.predicted_dt,
             events: core::mem::take(&mut self.events),
             hovered_files: self.hovered_files.clone(),
+            hovered_strings: self.hovered_strings.clone(),
             dropped_files: core::mem::take(&mut self.dropped_files),
+            dropped_strings: core::mem::take(&mut self.dropped_strings),
             focused: self.focused,
             system_theme: self.system_theme,
         }
@@ -153,7 +168,9 @@ impl RawInput {
             predicted_dt,
             mut events,
             mut hovered_files,
+            mut hovered_strings,
             mut dropped_files,
+            mut dropped_strings,
             focused,
             system_theme,
             safe_area_insets: safe_area,
@@ -167,7 +184,9 @@ impl RawInput {
         self.predicted_dt = predicted_dt; // use latest dt
         self.events.append(&mut events);
         self.hovered_files.append(&mut hovered_files);
+        self.hovered_strings.append(&mut hovered_strings);
         self.dropped_files.append(&mut dropped_files);
+        self.dropped_strings.append(&mut dropped_strings);
         self.focused = focused;
         self.system_theme = system_theme;
         self.safe_area_insets = safe_area;
@@ -185,7 +204,9 @@ impl RawInput {
             predicted_dt,
             events,
             hovered_files,
+            hovered_strings,
             dropped_files,
+            dropped_strings,
             focused,
             system_theme,
             safe_area_insets: safe_area,
@@ -214,7 +235,9 @@ impl RawInput {
         }
         ui.label(format!("predicted_dt: {:.1} ms", 1e3 * predicted_dt));
         ui.label(format!("hovered_files: {}", hovered_files.len()));
+        ui.label(format!("hovered_strings: {}", hovered_strings.len()));
         ui.label(format!("dropped_files: {}", dropped_files.len()));
+        ui.label(format!("dropped_strings: {}", dropped_strings.len()));
         ui.label(format!("focused: {focused}"));
         ui.label(format!("system_theme: {system_theme:?}"));
         ui.label(format!("safe_area: {safe_area:?}"));

@@ -658,6 +658,8 @@ impl InputState {
             || !self.events.is_empty()
             || !self.raw.hovered_files.is_empty()
             || !self.raw.dropped_files.is_empty()
+            || !self.raw.hovered_strings.is_empty()
+            || !self.raw.dropped_strings.is_empty()
         {
             // Immediate repaint
             return Some(Duration::ZERO);

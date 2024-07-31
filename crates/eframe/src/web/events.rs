@@ -940,20 +940,32 @@ fn install_drag_and_drop(runner_ref: &WebRunner, target: &EventTarget) -> Result
     runner_ref.add_event_listener(target, "dragover", |event: web_sys::DragEvent, runner| {
         if let Some(data_transfer) = event.data_transfer() {
             runner.input.raw.hovered_files.clear();
+            runner.input.raw.hovered_strings.clear();
 
             // NOTE: data_transfer.files() is always empty in dragover
 
             let items = data_transfer.items();
             for i in 0..items.length() {
                 if let Some(item) = items.get(i) {
-                    runner.input.raw.hovered_files.push(egui::HoveredFile {
-                        mime: item.type_(),
-                        ..Default::default()
-                    });
+                    // MEMBRANE: a dragged string is not a file.
+                    if item.kind() == "string" {
+                        runner
+                            .input
+                            .raw
+                            .hovered_strings
+                            .push(egui::HoveredString { mime: item.type_() });
+                    } else {
+                        runner.input.raw.hovered_files.push(egui::HoveredFile {
+                            mime: item.type_(),
+                            ..Default::default()
+                        });
+                    }
                 }
             }
 
-            if runner.input.raw.hovered_files.is_empty() {
+            if runner.input.raw.hovered_files.is_empty()
+                && runner.input.raw.hovered_strings.is_empty()
+            {
                 // Fallback: just preview anything. Needed on Desktop Safari.
                 runner
                     .input
@@ -961,6 +973,10 @@ fn install_drag_and_drop(runner_ref: &WebRunner, target: &EventTarget) -> Result
                     .hovered_files
                     .push(egui::HoveredFile::default());
             }
+
+            // MEMBRANE: the browser does not fire mousemove during a drag.
+            let pos = pos_from_mouse_event(runner.canvas(), &event, runner.egui_ctx());
+            runner.input.raw.events.push(egui::Event::PointerMoved(pos));
 
             runner.needs_repaint.repaint_asap();
             event.stop_propagation();
@@ -970,16 +986,46 @@ fn install_drag_and_drop(runner_ref: &WebRunner, target: &EventTarget) -> Result
 
     runner_ref.add_event_listener(target, "dragleave", |event: web_sys::DragEvent, runner| {
         runner.input.raw.hovered_files.clear();
+        runner.input.raw.hovered_strings.clear();
         runner.needs_repaint.repaint_asap();
         event.stop_propagation();
         event.prevent_default();
     })?;
 
-    runner_ref.add_event_listener(target, "drop", |event: web_sys::DragEvent, runner| {
+    let runner_ref_for_drop = runner_ref.clone();
+    runner_ref.add_event_listener(target, "drop", move |event: web_sys::DragEvent, runner| {
         if let Some(data_transfer) = event.data_transfer() {
             // TODO(https://github.com/emilk/egui/issues/3702): support dropping folders
             runner.input.raw.hovered_files.clear();
+            runner.input.raw.hovered_strings.clear();
             runner.needs_repaint.repaint_asap();
+
+            // MEMBRANE: the browser gives a dropped string to a callback.
+            let items = data_transfer.items();
+            for i in 0..items.length() {
+                let Some(item) = items.get(i) else {
+                    continue;
+                };
+                if item.kind() != "string" {
+                    continue;
+                }
+                let runner_ref = runner_ref_for_drop.clone();
+                let mime = item.type_();
+                let closure = Closure::once(move |contents: String| {
+                    if let Some(mut runner_lock) = runner_ref.try_lock() {
+                        runner_lock
+                            .input
+                            .raw
+                            .dropped_strings
+                            .push(egui::DroppedString { mime, contents });
+                        runner_lock.needs_repaint.repaint_asap();
+                    }
+                });
+                if let Err(err) = item.get_as_string(Some(closure.into_js_value().unchecked_ref()))
+                {
+                    log::error!("Failed to read dropped string: {err:?}");
+                }
+            }
 
             if let Some(files) = data_transfer.files() {
                 for i in 0..files.length() {

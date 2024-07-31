@@ -49,3 +49,14 @@ pub type DroppedFileHandle = Arc<dyn DroppedFile + Send + Sync>;
 /// [`web_sys::File`] is not thread-safe in that configuration.
 #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
 pub type DroppedFileHandle = Arc<dyn DroppedFile>;
+
+/// MEMBRANE: a string dropped into egui.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct DroppedString {
+    /// With the `eframe` web backend, this is set to the mime-type of the string (if available).
+    pub mime: String,
+
+    /// The contents of the string itself.
+    pub contents: String,
+}
