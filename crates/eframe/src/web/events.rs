@@ -119,6 +119,21 @@ fn install_blur_focus(runner_ref: &WebRunner, target: &EventTarget) -> Result<()
                 log::trace!("{} {event_name:?}", runner.canvas().id());
                 runner.update_focus();
 
+                // MEMBRANE: Some keyboard shortcuts steal away the focus from egui which means we
+                // won't get keyup events for those shortcut keys.
+                if event_name == "blur" {
+                    let keys_down = runner.egui_ctx().input(|i| i.keys_down.clone());
+                    for key in keys_down {
+                        runner.input.raw.events.push(egui::Event::Key {
+                            key,
+                            physical_key: None,
+                            pressed: false,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        });
+                    }
+                }
+
                 if event_name == "visibilitychange" {
                     // The tab was hidden or shown. An in-flight `requestAnimationFrame` is paused
                     // while hidden, so reschedule the paint loop using the scheduling mechanism
@@ -226,6 +241,10 @@ pub(crate) fn on_keydown(event: web_sys::KeyboardEvent, runner: &mut AppRunner) 
             event.prevent_default();
         }
 
+        // MEMBRANE: Stopping propagation here prevents vscode from handling key events while gaze is focused.
+        // TODO: use the newer should_propagate_event hook
+        let should_propagate = true;
+
         // Use web options to tell if the web event should be propagated to parent elements based on the egui event.
         if should_stop_propagation {
             event.stop_propagation();
@@ -328,6 +347,10 @@ pub(crate) fn on_keyup(event: web_sys::KeyboardEvent, runner: &mut AppRunner) {
     }
 
     runner.needs_repaint.repaint_asap();
+
+    // MEMBRANE: Stopping propagation here prevents vscode from handling key events while gaze is focused.
+    // TODO: use the newer should_propagate_event hook
+    let propagate_event = true;
 
     // Use web options to tell if the web event should be propagated to parent elements based on the egui event.
     let has_focus = runner.input.raw.focused;
