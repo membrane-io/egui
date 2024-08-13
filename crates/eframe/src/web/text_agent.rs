@@ -40,6 +40,7 @@ impl TextAgent {
         style.set_property("left", "0")?;
         // Prevent auto-zoom on mobile browsers (requires at least 16px).
         style.set_property("font-size", "16px")?;
+        style.set_property("pointer-events", "none")?;
 
         if root.has_type::<Document>() {
             // root object is a document, append to its body
