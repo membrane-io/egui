@@ -48,6 +48,7 @@ impl TextAgent {
         style.set_property("left", &format!("{}px", canvas.offset_left()))?;
         // Prevent auto-zoom on mobile browsers (requires at least 16px).
         style.set_property("font-size", "16px")?;
+        style.set_property("pointer-events", "none")?;
 
         // Insert the input as a sibling of the canvas, so that its
         // `position: absolute` resolves against the same containing block
