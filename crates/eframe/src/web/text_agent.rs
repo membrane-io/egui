@@ -38,6 +38,7 @@ impl TextAgent {
         style.set_property("position", "absolute")?;
         style.set_property("top", "0")?;
         style.set_property("left", "0")?;
+        style.set_property("pointer-events", "none")?;
 
         if root.has_type::<Document>() {
             // root object is a document, append to its body
