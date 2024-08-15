@@ -448,7 +448,11 @@ impl TextEdit<'_> {
                         frame_rect,
                         visuals.corner_radius,
                         background_color,
-                        visuals.bg_stroke, // TODO(emilk): we want to show something here, or a text-edit field doesn't "pop".
+                        // MEMBRANE: Use a dim version of the selection color which is used for the active stroke
+                        crate::Stroke::new(
+                            1.0,
+                            ui.visuals().selection.stroke.color.gamma_multiply(0.2),
+                        ),
                         StrokeKind::Inside,
                     )
                 }
