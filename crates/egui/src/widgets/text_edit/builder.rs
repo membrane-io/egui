@@ -704,7 +704,15 @@ impl TextEdit<'_> {
                             ui.visuals().selection.stroke,
                         )
                     } else {
-                        (visuals.corner_radius, background_color, visuals.bg_stroke)
+                        (
+                            visuals.corner_radius,
+                            background_color,
+                            // MEMBRANE: Use a dim version of the selection color which is used for the active stroke
+                            crate::Stroke::new(
+                                1.0,
+                                ui.visuals().selection.stroke.color.gamma_multiply(0.2),
+                            ),
+                        )
                     }
                 } else {
                     let visuals = &ui.style().visuals.widgets.inactive;
