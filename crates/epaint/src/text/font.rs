@@ -80,6 +80,13 @@ pub struct FontImpl {
     pixels_per_point: f32,
     glyph_info_cache: RwLock<ahash::HashMap<char, GlyphInfo>>, // TODO(emilk): standard Mutex
     atlas: Arc<Mutex<TextureAtlas>>,
+
+    // MEMBRANE: see FontImpl::new
+    glyph_scale: f32,
+    glyph_shift_y: f32,
+    glyph_gamma: f32,
+    // MEMBRANE: original font size as passed from app since scale_in_pixels is in "font space"
+    font_size: f32,
 }
 
 impl FontImpl {
@@ -90,6 +97,7 @@ impl FontImpl {
         ab_glyph_font: ab_glyph::FontArc,
         scale_in_pixels: f32,
         tweak: FontTweak,
+        font_size: f32,
     ) -> Self {
         assert!(
             scale_in_pixels > 0.0,
@@ -126,6 +134,18 @@ impl FontImpl {
         // Round to closest pixel:
         let y_offset_in_points = (y_offset_points * pixels_per_point).round() / pixels_per_point;
 
+        // MEMBRANE HACK: Slight shift/scale/gamma to improve sharpness of our fonts.
+        // TODO: This should be configurable via FontTweak but because egui rounds the scale_in_pixels, it cannot be
+        // done without changing egui. It's also marked as a HACK because I'm not entirely sure if the positions/sizes
+        // of text will now be slightly off so we'll need to write some rendering test if we want to upstream this.
+        let (glyph_scale, glyph_shift_y, glyph_gamma) = match (name.as_str(), font_size) {
+            ("JetBrainsMono", 11.0) => (1.04, -0.2, 1.5),
+            ("JetBrainsMonoBold", 11.0) => (1.07, -0.1, 1.5),
+            ("JetBrainsMono", 10.0) => (1.06, -0.1, 1.4),
+            ("JetBrainsMonoBold", 10.0) => (1.07, -0.1, 1.4),
+            _ => (1.0, 0.0, 1.5),
+        };
+
         Self {
             name,
             ab_glyph_font,
@@ -136,6 +156,12 @@ impl FontImpl {
             pixels_per_point,
             glyph_info_cache: Default::default(),
             atlas,
+
+            // MEMBRANE: see FontImpl::new
+            glyph_scale,
+            glyph_shift_y,
+            glyph_gamma,
+            font_size,
         }
     }
 
@@ -218,10 +244,36 @@ impl FontImpl {
         use ab_glyph::Font as _;
         let glyph_id = self.ab_glyph_font.glyph_id(c);
 
+        // MEMBRANE: Some glyphs are slightly shifted to improve grid alignment.
+        let glyph_shift = match (c, self.name.as_str(), self.font_size) {
+            // 11px adjustments
+            ('t', "JetBrainsMono", 11.0) => (-0.4, 0.0),
+            ('l', "JetBrainsMono", 11.0) => (0.4, 0.0),
+            ('i', "JetBrainsMono", 11.0) => (-0.2, 0.0),
+            ('r', "JetBrainsMono", 11.0) => (-0.2, 0.0),
+            ('f', "JetBrainsMono", 11.0) => (0.2, 0.0),
+            ('W', "JetBrainsMono", 11.0) => (-0.15, 0.0),
+            ('-', "JetBrainsMono", 11.0) => (0.0, -0.4),
+            ('+', "JetBrainsMono", 11.0) => (0.0, -0.4),
+
+            // 10px adjustments
+            ('m', "JetBrainsMono", 10.0) => (0.3, 0.0),
+            ('+', "JetBrainsMono", 10.0) => (0.3, 0.0),
+
+            // Bold adjustments
+            ('W', "JetBrainsMonoBold", _) => (0.4, 0.0),
+            (_, "JetBrainsMonoBold", _) => (0.2, 0.0),
+            _ => (0.0, 0.0),
+        };
+        let glyph_shift = ab_glyph::Point {
+            x: glyph_shift.0,
+            y: glyph_shift.1 + self.glyph_shift_y,
+        };
+
         if glyph_id.0 == 0 {
             None // unsupported character
         } else {
-            let glyph_info = self.allocate_glyph(glyph_id);
+            let glyph_info = self.allocate_glyph(glyph_id, glyph_shift);
             self.glyph_info_cache.write().insert(c, glyph_info);
             Some(glyph_info)
         }
@@ -261,13 +313,18 @@ impl FontImpl {
         self.ascent
     }
 
-    fn allocate_glyph(&self, glyph_id: ab_glyph::GlyphId) -> GlyphInfo {
+    fn allocate_glyph(
+        &self,
+        glyph_id: ab_glyph::GlyphId,
+        glyph_shift: ab_glyph::Point,
+    ) -> GlyphInfo {
         assert!(glyph_id.0 != 0, "Can't allocate glyph for id 0");
         use ab_glyph::{Font as _, ScaleFont as _};
 
+        // MEMBRANE: see FontImpl::new
         let glyph = glyph_id.with_scale_and_position(
-            self.scale_in_pixels as f32,
-            ab_glyph::Point { x: 0.0, y: 0.0 },
+            (self.scale_in_pixels as f32) * self.glyph_scale,
+            glyph_shift,
         );
 
         let uv_rect = self.ab_glyph_font.outline_glyph(glyph).map(|glyph| {
@@ -284,7 +341,7 @@ impl FontImpl {
                         if 0.0 < v {
                             let px = glyph_pos.0 + x as usize;
                             let py = glyph_pos.1 + y as usize;
-                            image[(px, py)] = v;
+                            image[(px, py)] = v.powf(self.glyph_gamma);
                         }
                     });
                     glyph_pos
@@ -310,7 +367,8 @@ impl FontImpl {
             .ab_glyph_font
             .as_scaled(self.scale_in_pixels as f32)
             .h_advance(glyph_id)
-            / self.pixels_per_point;
+            / self.pixels_per_point
+            * self.glyph_scale;
 
         GlyphInfo {
             id: glyph_id,

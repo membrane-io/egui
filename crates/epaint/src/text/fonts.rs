@@ -1039,6 +1039,7 @@ impl FontImplCache {
                     ab_glyph_font,
                     scale_in_pixels,
                     tweak,
+                    scale_in_points,
                 ))
             })
             .clone()

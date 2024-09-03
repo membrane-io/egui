@@ -68,17 +68,19 @@ impl Widget for SelectableLabel {
 
             let visuals = ui.style().interact_selectable(&response, selected);
 
-            if selected || response.hovered() || response.highlighted() || response.has_focus() {
-                let rect = rect.expand(visuals.expansion);
+            // MEMBRANE: Allow selectable labels to show borders (currently used for Popover menus)
 
-                ui.painter().rect(
-                    rect,
-                    visuals.corner_radius,
-                    visuals.weak_bg_fill,
-                    visuals.bg_stroke,
-                    epaint::StrokeKind::Inside,
-                );
-            }
+            // if selected || response.hovered() || response.highlighted() || response.has_focus() {
+            let rect = rect.expand(visuals.expansion);
+
+            ui.painter().rect(
+                rect,
+                visuals.corner_radius,
+                visuals.weak_bg_fill,
+                visuals.bg_stroke,
+                epaint::StrokeKind::Inside,
+            );
+            // }
 
             ui.painter().galley(text_pos, galley, visuals.text_color());
         }
