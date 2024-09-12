@@ -65,11 +65,13 @@ impl Default for State {
 
 impl State {
     pub fn load(ctx: &Context, id: Id) -> Option<Self> {
-        ctx.data_mut(|d| d.get_persisted(id))
+        // MEMBRANE: don't persist scroll state
+        ctx.data_mut(|d| d.get_temp(id))
     }
 
     pub fn store(self, ctx: &Context, id: Id) {
-        ctx.data_mut(|d| d.insert_persisted(id, self));
+        // MEMBRANE: don't persist scroll state
+        ctx.data_mut(|d| d.insert_temp(id, self));
     }
 
     /// Get the current kinetic scrolling velocity.
