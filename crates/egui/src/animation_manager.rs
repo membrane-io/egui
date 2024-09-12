@@ -85,6 +85,11 @@ impl AnimationManager {
                 value
             }
             Some(anim) => {
+                if animation_time == 0.0 {
+                    anim.from_value = value;
+                    anim.to_value = value;
+                    return value;
+                }
                 let time_since_toggle = (input.time - anim.toggle_time) as f32;
                 // On the frame we toggle we don't want to return the old value,
                 // so we extrapolate forwards by half a frame:
@@ -98,10 +103,6 @@ impl AnimationManager {
                     anim.from_value = current_value; //start new animation from current position of playing animation
                     anim.to_value = value;
                     anim.toggle_time = input.time;
-                }
-                if animation_time == 0.0 {
-                    anim.from_value = value;
-                    anim.to_value = value;
                 }
                 current_value
             }
