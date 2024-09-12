@@ -132,12 +132,17 @@ impl FontImpl {
         // TODO: This should be configurable via FontTweak but because egui rounds the scale_in_pixels, it cannot be
         // done without changing egui. It's also marked as a HACK because I'm not entirely sure if the positions/sizes
         // of text will now be slightly off so we'll need to write some rendering test if we want to upstream this.
-        let (glyph_scale, glyph_shift_y, glyph_gamma) = match (name.as_str(), font_size) {
-            ("JetBrainsMono", 11.0) => (1.04, -0.2, 1.5),
-            ("JetBrainsMonoBold", 11.0) => (1.07, -0.1, 1.5),
-            ("JetBrainsMono", 10.0) => (1.06, -0.1, 1.4),
-            ("JetBrainsMonoBold", 10.0) => (1.07, -0.1, 1.4),
-            _ => (1.0, 0.0, 1.5),
+        let glyph_gamma = if pixels_per_point == 1.0 { 1.4 } else { 1.1 };
+        let (glyph_scale, glyph_shift_y) = if pixels_per_point == 1.0 {
+            match (name.as_str(), font_size) {
+                ("JetBrainsMono", 10.0) => (1.06, -0.1),
+                ("JetBrainsMono", 11.0) => (1.04, -0.2),
+                ("JetBrainsMonoBold", 10.0) => (1.07, -0.1),
+                ("JetBrainsMonoBold", 11.0) => (1.07, -0.1),
+                _ => (1.0, 0.0),
+            }
+        } else {
+            (1.0, 0.0)
         };
 
         Self {
