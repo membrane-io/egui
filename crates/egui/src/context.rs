@@ -586,7 +586,7 @@ impl ContextImpl {
             profiling::scope!("Fonts::begin_pass");
             if fonts.begin_pass(text_options) {
                 self.font_generation += 1;
-            ;
+            }
         }
     }
 
@@ -2055,6 +2055,11 @@ impl Context {
         if update_fonts {
             self.memory_mut(|mem| mem.new_font_definitions = Some(font_definitions));
         }
+    }
+
+    /// MEMBRANE: increased each time the font atlas changes so we can drop any cached galleys.
+    pub fn font_generation(&self) -> usize {
+        self.0.read().font_generation
     }
 
     /// Tell `egui` which fonts to use.
