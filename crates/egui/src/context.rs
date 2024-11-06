@@ -1828,6 +1828,11 @@ impl Context {
         }
     }
 
+    /// MEMBRANE: increased each time the font atlas changes so we can drop any cached galleys.
+    pub fn font_generation(&self) -> usize {
+        self.0.read().font_generation
+    }
+
     /// Tell `egui` which fonts to use.
     ///
     /// The default `egui` fonts only support latin and cyrillic alphabets,
