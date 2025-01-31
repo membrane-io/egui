@@ -303,13 +303,27 @@ impl Painter {
             (1.0, color),
             StrokeKind::Outside,
         );
-        self.text(
-            rect.min,
-            Align2::LEFT_TOP,
-            text.to_string(),
-            FontId::monospace(12.0),
-            color,
-        );
+        let text = text.to_string();
+        if !text.is_empty() {
+            let margin = epaint::Margin::symmetric(3, 1);
+            let text_bg = self.add(Shape::Noop);
+            let text_rect = self.text(
+                rect.min + margin.left_top(),
+                Align2::LEFT_TOP,
+                text,
+                FontId::monospace(10.0),
+                Color32::WHITE,
+            );
+            let bg_color = if color.r() > 127 {
+                Color32::from_black_alpha(120)
+            } else {
+                Color32::from_white_alpha(120)
+            };
+            self.set(
+                text_bg,
+                Shape::rect_filled(text_rect + margin, 0.0, bg_color),
+            );
+        }
     }
 
     pub fn error(&self, pos: Pos2, text: impl std::fmt::Display) -> Rect {
