@@ -368,6 +368,9 @@ pub(crate) struct Prepared {
     constrain: bool,
     constrain_rect: Rect,
 
+    // MEMBRANE: see `Prepared::end()`
+    anchor: Option<(Align2, Vec2)>,
+
     /// We always make windows invisible the first frame to hide "first-frame-jitters".
     ///
     /// This is so that we use the first frame to calculate the window size,
@@ -531,6 +534,7 @@ impl Area {
             layer_id,
             state,
             move_response,
+            anchor,
             enabled,
             constrain,
             constrain_rect,
@@ -610,10 +614,14 @@ impl Prepared {
             mut state,
             move_response: mut response,
             sizing_pass,
+            anchor,
+            constrain_rect,
             ..
         } = self;
 
-        state.size = Some(content_ui.min_size());
+        let prev_size = state.size;
+        let actual_size = content_ui.min_size();
+        state.size = Some(actual_size);
 
         // Make sure we report back the correct size.
         // Very important after the initial sizing pass, when the initial estimate of the size is way off.
@@ -625,6 +633,21 @@ impl Prepared {
         // Bubble up the close event
         if content_ui.should_close() {
             response.set_close();
+        }
+
+        // MEMBRANE: If the area is anchored but its actual size is different from what was used for alignment,
+        // re-align it visually (this frame only) so that it stays anchored. This makes animations that change the
+        // size look correct.
+        if let Some((anchor, offset)) = anchor {
+            if prev_size != Some(actual_size) {
+                let adjusted_pos = anchor
+                    .align_size_within_rect(actual_size, constrain_rect)
+                    .left_top()
+                    + offset;
+                let adjustment = adjusted_pos - content_ui.min_rect().left_top();
+                let transform = emath::TSTransform::from_translation(adjustment);
+                ctx.transform_layer_shapes(layer_id, transform);
+            }
         }
 
         ctx.memory_mut(|m| m.areas_mut().set_state(layer_id, state));
