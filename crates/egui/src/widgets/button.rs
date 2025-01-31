@@ -35,6 +35,7 @@ pub struct Button<'a> {
     small: bool,
     frame: Option<bool>,
     min_size: Vec2,
+    min_aspect_ratio: f32,
     corner_radius: Option<CornerRadius>,
     selected: bool,
     image_tint_follows_text_color: bool,
@@ -69,6 +70,7 @@ impl<'a> Button<'a> {
             small: false,
             frame: None,
             min_size: Vec2::ZERO,
+            min_aspect_ratio: 1.0,
             corner_radius: None,
             selected: false,
             image_tint_follows_text_color: false,
@@ -151,6 +153,14 @@ impl<'a> Button<'a> {
         self
     }
 
+    /// Sets the minimum aspect ratio of the button, this can be set to `1.0` to prevent buttons from being taller than
+    /// they are wide.
+    #[inline]
+    pub fn min_aspect_ratio(mut self, min_aspect_ratio: f32) -> Self {
+        self.min_aspect_ratio = min_aspect_ratio;
+        self
+    }
+
     /// Set the rounding of the button.
     #[inline]
     pub fn corner_radius(mut self, corner_radius: impl Into<CornerRadius>) -> Self {
@@ -217,6 +227,7 @@ impl Widget for Button<'_> {
             small,
             frame,
             min_size,
+            min_aspect_ratio,
             corner_radius,
             selected,
             image_tint_follows_text_color,
@@ -311,6 +322,9 @@ impl Widget for Button<'_> {
         desired_size += 2.0 * button_padding;
         if !small {
             desired_size.y = desired_size.y.at_least(ui.spacing().interact_size.y);
+            if desired_size.x / desired_size.y < min_aspect_ratio {
+                desired_size.x = desired_size.y * min_aspect_ratio;
+            }
         }
         desired_size = desired_size.at_least(min_size);
 
