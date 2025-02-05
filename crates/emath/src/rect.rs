@@ -452,6 +452,14 @@ impl Rect {
         }
     }
 
+    /// The opposite of [`Self::lerp_inside`]. Return `[0, 0]` for
+    /// [`Self::min`] and `[1, 1]` for [`Self::max`].
+    /// The returned value is not clamped.
+    #[inline]
+    pub fn unlerp_inside(&self, p: Pos2) -> Vec2 {
+        (p - self.min) / self.size()
+    }
+
     /// Linearly self towards other rect.
     #[inline]
     pub fn lerp_towards(&self, other: &Self, t: f32) -> Self {
