@@ -66,7 +66,7 @@ pub(crate) fn install_event_handlers(runner_ref: &WebRunner) -> Result<(), JsVal
     let canvas = runner_ref.try_lock().unwrap().canvas().clone();
 
     // MEMBRANE: for some reason canvas doesn't get these events in the vscode iframe so use window instead.
-    install_blur_focus(runner_ref, &document)?;
+    install_blur_focus(runner_ref, &window)?;
     install_blur_focus(runner_ref, &canvas)?;
 
     prevent_default_and_stop_propagation(
@@ -115,6 +115,15 @@ fn install_blur_focus(runner_ref: &WebRunner, target: &EventTarget) -> Result<()
     for event_name in ["blur", "focus", "visibilitychange"] {
         let closure = move |_event: web_sys::MouseEvent, runner: &mut AppRunner| {
             log::trace!("{} {event_name:?}", runner.canvas().id());
+
+            // MEMBRANE: since gaze is the only thing that runs in the iframe, when the window gets focused, we focus the canvas
+            if !super::has_focus(runner.canvas())
+                && !runner.text_agent.has_focus()
+                && event_name == "focus"
+            {
+                runner.canvas().focus().ok();
+            }
+
             runner.update_focus();
 
             // MEMBRANE: Some keyboard shortcuts steal away the focus from egui which means we won't get keyup
