@@ -149,3 +149,41 @@ impl std::ops::Mul<Self> for TSTransform {
         }
     }
 }
+
+// MEMNRANE: Added so that we can interpolate between two TSTransforms
+impl std::ops::Add<Self> for TSTransform {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            scaling: self.scaling + rhs.scaling,
+            translation: self.translation + rhs.translation,
+        }
+    }
+}
+
+// MEMNRANE: Added so that we can interpolate between two TSTransforms
+impl std::ops::Mul<f32> for TSTransform {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, f: f32) -> TSTransform {
+        Self {
+            scaling: self.scaling * f,
+            translation: self.translation * f,
+        }
+    }
+}
+
+// MEMNRANE: Added so that we can interpolate between two TSTransforms
+impl std::ops::Mul<TSTransform> for f32 {
+    type Output = TSTransform;
+
+    #[inline]
+    fn mul(self, t: TSTransform) -> TSTransform {
+        TSTransform {
+            scaling: t.scaling * self,
+            translation: t.translation * self,
+        }
+    }
+}
