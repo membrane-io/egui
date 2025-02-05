@@ -1411,7 +1411,9 @@ impl Context {
 
     /// Paint on top of everything else
     pub fn debug_painter(&self) -> Painter {
-        Self::layer_painter(self, LayerId::debug())
+        // MEMBRANE: no clipping for debug painter, important when layer is transformed
+        let screen_rect = Rect::EVERYTHING;
+        Painter::new(self.clone(), LayerId::debug(), screen_rect)
     }
 
     /// Print this text next to the cursor at the end of the pass.
