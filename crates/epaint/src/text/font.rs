@@ -270,6 +270,13 @@ impl FontImpl {
             // Bold adjustments
             ('W', "JetBrainsMonoBold", _) => (0.4, 0.0),
             (_, "JetBrainsMonoBold", _) => (0.2, 0.0),
+
+            // Phosphor icons
+            (/* BOOK */ '\u{E0E2}', "phosphor", 16.0) => (0.5, 0.5),
+            (/* PACKAGE */ '\u{E390}', "phosphor", 16.0) => (-0.5, -0.0),
+            (/* LIST */ '\u{E2F0}', "phosphor", 16.0) => (0.0, -0.5),
+            (/* PLUS_CIRCLE */ '\u{E3D6}', "phosphor", 16.0) => (-0.5, -0.5),
+            (/* MINUS_SQUARE */ '\u{ED4C}', "phosphor", 12.0) => (-0.0, 1.0),
             _ => (0.0, 0.0),
         };
         let glyph_shift = ab_glyph::Point {
