@@ -116,7 +116,8 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 rust_2021_prelude_collisions = "warn"
 semicolon_in_expressions_from_macros = "warn"
 trivial_numeric_casts = "warn"
-unexpected_cfgs = "warn"
+# MEMBRANE: suppress web_sys_unstable_apis warning
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(web_sys_unstable_apis)'] }
 unsafe_op_in_unsafe_fn = "warn"                         # `unsafe_op_in_unsafe_fn` may become the default in future Rust versions: https://github.com/rust-lang/rust/issues/71668
 unused_extern_crates = "warn"
 unused_import_braces = "warn"

@@ -209,7 +209,7 @@ pub(crate) fn on_keydown(event: web_sys::KeyboardEvent, runner: &mut AppRunner) 
             repeat: false, // egui will fill this in for us!
             modifiers,
         };
-        let should_propagate = (runner.web_options.should_propagate_event)(&egui_event);
+        let _should_propagate = (runner.web_options.should_propagate_event)(&egui_event);
         runner.input.raw.events.push(egui_event);
         runner.needs_repaint.repaint_asap();
 
@@ -290,7 +290,7 @@ pub(crate) fn on_keyup(event: web_sys::KeyboardEvent, runner: &mut AppRunner) {
     let modifiers = modifiers_from_kb_event(&event);
     runner.input.raw.modifiers = modifiers;
 
-    let mut propagate_event = false;
+    let mut _propagate_event = false;
 
     if let Some(key) = translate_key(&event.key()) {
         let egui_event = egui::Event::Key {
@@ -300,7 +300,7 @@ pub(crate) fn on_keyup(event: web_sys::KeyboardEvent, runner: &mut AppRunner) {
             repeat: false,
             modifiers,
         };
-        propagate_event |= (runner.web_options.should_propagate_event)(&egui_event);
+        _propagate_event |= (runner.web_options.should_propagate_event)(&egui_event);
         runner.input.raw.events.push(egui_event);
     }
 
@@ -319,7 +319,7 @@ pub(crate) fn on_keyup(event: web_sys::KeyboardEvent, runner: &mut AppRunner) {
                 repeat: false,
                 modifiers,
             };
-            propagate_event |= (runner.web_options.should_propagate_event)(&egui_event);
+            _propagate_event |= (runner.web_options.should_propagate_event)(&egui_event);
             runner.input.raw.events.push(egui_event);
         }
     }
