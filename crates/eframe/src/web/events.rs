@@ -214,7 +214,7 @@ pub(crate) fn on_keydown(event: web_sys::KeyboardEvent, runner: &mut AppRunner) 
             repeat: false, // egui will fill this in for us!
             modifiers,
         };
-        let should_stop_propagation = (runner.web_options.should_stop_propagation)(&egui_event);
+        //let _should_stop_propagation = (runner.web_options.should_stop_propagation)(&egui_event);
         runner.input.raw.events.push(egui_event);
         runner.needs_repaint.repaint_asap();
 
@@ -234,7 +234,7 @@ pub(crate) fn on_keydown(event: web_sys::KeyboardEvent, runner: &mut AppRunner) 
 
         // MEMBRANE: Stopping propagation here prevents vscode from handling key events while gaze is focused.
         // TODO: use the newer should_propagate_event hook
-        let should_propagate = true;
+        let should_stop_propagation = false;
 
         // Use web options to tell if the web event should be propagated to parent elements based on the egui event.
         if should_stop_propagation {
@@ -298,7 +298,7 @@ pub(crate) fn on_keyup(event: web_sys::KeyboardEvent, runner: &mut AppRunner) {
     let modifiers = modifiers_from_kb_event(&event);
     runner.input.raw.modifiers = modifiers;
 
-    let mut should_stop_propagation = true;
+    let mut _should_stop_propagation = true;
 
     if let Some(key) = translate_key(&event.key()) {
         let egui_event = egui::Event::Key {
@@ -308,7 +308,7 @@ pub(crate) fn on_keyup(event: web_sys::KeyboardEvent, runner: &mut AppRunner) {
             repeat: false,
             modifiers,
         };
-        should_stop_propagation &= (runner.web_options.should_stop_propagation)(&egui_event);
+        _should_stop_propagation &= (runner.web_options.should_stop_propagation)(&egui_event);
         runner.input.raw.events.push(egui_event);
     }
 
@@ -329,7 +329,7 @@ pub(crate) fn on_keyup(event: web_sys::KeyboardEvent, runner: &mut AppRunner) {
                 repeat: false,
                 modifiers,
             };
-            should_stop_propagation &= (runner.web_options.should_stop_propagation)(&egui_event);
+            _should_stop_propagation &= (runner.web_options.should_stop_propagation)(&egui_event);
             runner.input.raw.events.push(egui_event);
         }
     }
@@ -338,7 +338,7 @@ pub(crate) fn on_keyup(event: web_sys::KeyboardEvent, runner: &mut AppRunner) {
 
     // MEMBRANE: Stopping propagation here prevents vscode from handling key events while gaze is focused.
     // TODO: use the newer should_propagate_event hook
-    let propagate_event = true;
+    let should_stop_propagation = false;
 
     // Use web options to tell if the web event should be propagated to parent elements based on the egui event.
     let has_focus = runner.input.raw.focused;

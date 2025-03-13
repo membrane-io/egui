@@ -48,11 +48,12 @@ impl EhttpLoader {
     pub const ID: &'static str = egui::generate_loader_id!(EhttpLoader);
 }
 
-const PROTOCOLS: &[&str] = &["http://", "https://"];
+// MEMBRANE: commenting out unused code to suppress warnings
+// const PROTOCOLS: &[&str] = &["http://", "https://"];
 
-fn starts_with_one_of(s: &str, prefixes: &[&str]) -> bool {
-    prefixes.iter().any(|prefix| s.starts_with(prefix))
-}
+// fn starts_with_one_of(s: &str, prefixes: &[&str]) -> bool {
+//     prefixes.iter().any(|prefix| s.starts_with(prefix))
+// }
 
 impl BytesLoader for EhttpLoader {
     fn id(&self) -> &str {
