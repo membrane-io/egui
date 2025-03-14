@@ -463,6 +463,8 @@ pub mod text {
     };
 }
 
+pub use epaint::MarginF32;
+
 pub use self::{
     atomics::*,
     containers::{menu::MenuBar, *},
