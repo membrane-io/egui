@@ -481,6 +481,8 @@ pub mod text {
     };
 }
 
+pub use epaint::MarginF32;
+
 pub use self::{
     containers::*,
     context::{Context, RepaintCause, RequestRepaintInfo},
