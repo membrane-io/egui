@@ -4,7 +4,7 @@ use emath::TSTransform;
 
 use crate::{
     layers::ShapeIdx, text::CCursor, text_selection::CCursorRange, Context, CursorIcon, Event,
-    Galley, Id, LayerId, Pos2, Rect, Response, Ui,
+    Galley, Id, LayerId, Pos2, Rect, Response, Ui, Vec2,
 };
 
 use super::{
@@ -315,6 +315,7 @@ impl LabelSelectionState {
         ui: &Ui,
         response: &Response,
         global_from_galley: TSTransform,
+        global_from_layer: TSTransform,
         galley: &Galley,
     ) -> TextCursorState {
         let Some(selection) = &mut self.selection else {
@@ -338,7 +339,7 @@ impl LabelSelectionState {
             if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
                 let galley_rect =
                     global_from_galley * Rect::from_min_size(Pos2::ZERO, galley.size());
-                let galley_rect = galley_rect.intersect(ui.clip_rect());
+                let galley_rect = galley_rect.intersect(global_from_layer * ui.clip_rect());
 
                 let is_in_same_column = galley_rect
                     .x_range()
@@ -372,13 +373,17 @@ impl LabelSelectionState {
                     && galley_rect.bottom() <= pointer_pos.y
                 {
                     // The user is dragging the text selection downwards, below this widget.
-                    // We move the cursor to the end of this widget,
-                    // (and we may do the same for the next widget too).
                     if DEBUG {
                         ui.ctx()
                             .debug_text(format!("Downwards drag; include {:?}", response.id));
                     }
-                    Some(galley.end())
+                    if selection.primary.widget_id == response.id {
+                        Some(galley.cursor_from_pos((galley_from_global * pointer_pos).to_vec2()))
+                    } else {
+                        // We move the cursor to the end of this widget,
+                        // (and we may do the same for the next widget too).
+                        Some(galley.end())
+                    }
                 } else {
                     None
                 };
@@ -513,7 +518,8 @@ impl LabelSelectionState {
 
         let old_selection = self.selection;
 
-        let mut cursor_state = self.cursor_for(ui, response, global_from_galley, galley);
+        let mut cursor_state =
+            self.cursor_for(ui, response, global_from_galley, global_from_layer, galley);
 
         let old_range = cursor_state.range(galley);
 
@@ -596,23 +602,45 @@ impl LabelSelectionState {
             }
         }
 
-        // Scroll containing ScrollArea on cursor change:
+        // Scroll containing ScrollArea on cursor change.
         if let Some(range) = new_range {
             let old_primary = old_selection.map(|s| s.primary);
             let new_primary = self.selection.as_ref().map(|s| s.primary);
             if let Some(new_primary) = new_primary {
+                let is_primary = new_primary.widget_id == widget_id;
+                let is_secondary = self.selection.map_or(false, |selection| {
+                    selection.secondary.widget_id == widget_id
+                });
                 let primary_changed = old_primary.map_or(true, |old| {
                     old.widget_id != new_primary.widget_id || old.ccursor != new_primary.ccursor
                 });
-                if primary_changed && new_primary.widget_id == widget_id {
-                    let is_fully_visible = ui.clip_rect().contains_rect(response.rect); // TODO(emilk): remove this HACK workaround for https://github.com/emilk/egui/issues/1531
-                    if selection_changed && !is_fully_visible {
-                        // Scroll to keep primary cursor in view:
-                        let row_height = estimate_row_height(galley);
-                        let primary_cursor_rect =
-                            global_from_galley * cursor_rect(galley, &range.primary, row_height);
-                        ui.scroll_to_rect(primary_cursor_rect, None);
+
+                // TODO: During pointer-based selection we only scroll the area containing the secondary cursor.
+                // This matches the behavior of browsers, except for the fact that we don't allow scroll_to_rect to
+                // bubble up beyond the first ScrollArea which prevents the grandparent from scrolling.
+                let scroll_to_pointer = self.is_dragging && is_secondary;
+                let scroll_to_cursor = !self.is_dragging && is_primary && primary_changed;
+                if scroll_to_pointer {
+                    // If the pointer gets this close to the edge of the clip rect, start scrolling.
+                    // Browsers don't consider the line height to determine this margin so we also hard-code
+                    // it here. Firefox uses no margin at all, while Chrome uses ~32px.
+                    const POINTER_SELECTION_MARGIN: f32 = 32.0;
+                    if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+                        let scroll_target = Rect::from_center_size(
+                            layer_from_global * pointer_pos,
+                            Vec2::splat(POINTER_SELECTION_MARGIN),
+                        );
+
+                        if !ui.clip_rect().contains_rect(scroll_target) {
+                            ui.scroll_to_rect(scroll_target, None);
+                        }
                     }
+                } else if scroll_to_cursor {
+                    // Selection changed via keyboard. Scroll to keep primary cursor in view
+                    let row_height = estimate_row_height(galley);
+                    let primary_cursor_rect =
+                        layer_from_galley * cursor_rect(galley, &range.primary, row_height);
+                    ui.scroll_to_rect(primary_cursor_rect, None);
                 }
             }
         }
