@@ -471,6 +471,8 @@ pub mod text {
     };
 }
 
+pub use epaint::MarginF32;
+
 pub use self::{
     atomics::{
         AllocatedWidgetAtom, Atom, AtomClosure, AtomExt, AtomKind, AtomPaint, AtomPaintArgs, Atoms,
