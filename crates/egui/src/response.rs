@@ -260,14 +260,23 @@ impl Response {
     ///
     /// Clicks on other layers above this widget *will* be considered as clicking elsewhere.
     pub fn clicked_elsewhere(&self) -> bool {
-        let (pointer_interact_pos, any_click) = self
-            .ctx
-            .input(|i| (i.pointer.interact_pos(), i.pointer.any_click()));
+        let (pointer_interact_pos, any_click, blurred) = self.ctx.input(|i| {
+            (
+                i.pointer.interact_pos(),
+                i.pointer.any_click(),
+                i.events
+                    .iter()
+                    .any(|e| matches!(e, crate::Event::WindowFocused(false))),
+            )
+        });
 
         // We do not use self.clicked(), because we want to catch all clicks within our frame,
         // even if we aren't clickable (or even enabled).
         // This is important for windows and such that should close then the user clicks elsewhere.
-        if any_click {
+        // MEMBRANE: When the egui app gets unfocused, consider it as a "clicked elsewhere"
+        if blurred {
+            true
+        } else if any_click {
             if self.contains_pointer() || self.hovered() {
                 false
             } else if let Some(pos) = pointer_interact_pos {
