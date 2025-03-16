@@ -229,7 +229,13 @@ impl Response {
         self.ctx.input(|i| {
             let pointer = &i.pointer;
 
-            if pointer.any_click() {
+            // MEMBRANE: When the egui app gets unfocused, consider it as a "clicked elsewhere"
+            if i.events
+                .iter()
+                .any(|e| matches!(e, crate::Event::WindowFocused(false)))
+            {
+                true
+            } else if pointer.any_click() {
                 if self.contains_pointer() || self.hovered() {
                     false
                 } else if let Some(pos) = pointer.interact_pos() {
