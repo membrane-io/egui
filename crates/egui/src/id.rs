@@ -55,7 +55,7 @@ impl Id {
 
     /// Create a new root [`Id`] from a high-entropy hash.
     #[inline]
-    const fn from_hash(hash: u64) -> Self {
+    pub const fn from_hash(hash: u64) -> Self {
         if let Some(nonzero) = NonZeroU64::new(hash) {
             Self(nonzero)
         } else {
