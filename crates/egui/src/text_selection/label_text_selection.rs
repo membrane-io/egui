@@ -142,6 +142,13 @@ impl LabelSelectionState {
         });
     }
 
+    /// MEMBRANE: Whether any label is being hovered, this can be used to disambiguate
+    /// between text selection and other drag interactions
+    pub fn any_hovered(ctx: &Context) -> bool {
+        let id = Id::new(ctx.viewport_id());
+        ctx.data(|data| data.get_temp::<Self>(id).map_or(false, |s| s.any_hovered))
+    }
+
     fn begin_pass(ctx: &Context) {
         let mut state = Self::load(ctx);
 
