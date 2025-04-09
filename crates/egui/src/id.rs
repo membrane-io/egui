@@ -44,7 +44,7 @@ impl Id {
     pub const NULL: Self = Self(NonZeroU64::MAX);
 
     #[inline]
-    const fn from_hash(hash: u64) -> Self {
+    pub const fn from_hash(hash: u64) -> Self {
         if let Some(nonzero) = NonZeroU64::new(hash) {
             Self(nonzero)
         } else {
