@@ -50,6 +50,30 @@ impl Margin {
         }
     }
 
+    /// Sets the left margin
+    pub fn with_left(mut self, left: i8) -> Self {
+        self.left = left;
+        self
+    }
+
+    /// Sets the right margin
+    pub fn with_right(mut self, right: i8) -> Self {
+        self.right = right;
+        self
+    }
+
+    /// Sets the top margin
+    pub fn with_top(mut self, top: i8) -> Self {
+        self.top = top;
+        self
+    }
+
+    /// Sets the bottom margin
+    pub fn with_bottom(mut self, bottom: i8) -> Self {
+        self.bottom = bottom;
+        self
+    }
+
     /// Left margin, as `f32`
     #[inline]
     pub const fn leftf(self) -> f32 {
