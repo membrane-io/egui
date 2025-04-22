@@ -2,8 +2,8 @@ mod touch_state;
 mod wheel_state;
 
 use crate::{
-    SafeAreaInsets,
-    emath::{NumExt as _, Pos2, Rect, Vec2, vec2},
+    Id, SafeAreaInsets,
+    emath::{NumExt as _, Pos2, Rect, Vec2, Vec2b, vec2},
     util::History,
 };
 use crate::{
@@ -228,6 +228,9 @@ pub struct InputState {
     #[cfg_attr(feature = "serde", serde(skip))]
     wheel: WheelState,
 
+    /// Used to track the current part of the ui using scrolling.
+    pub scroll_focus: Option<(Id, Vec2b)>,
+
     /// How many points the user scrolled, smoothed over a few frames.
     ///
     /// The delta dictates how the _content_ should move.
@@ -341,6 +344,7 @@ impl Default for InputState {
             touch_states: Default::default(),
 
             wheel: Default::default(),
+            scroll_focus: None,
             smooth_scroll_delta: Vec2::ZERO,
             zoom_factor_delta: 1.0,
             rotation_radians: 0.0,
@@ -397,6 +401,7 @@ impl InputState {
         let mut rotation_radians = 0.0;
 
         self.wheel.smooth_wheel_delta = Vec2::ZERO;
+        let mut scroll_focus = self.scroll_focus;
 
         for event in &mut new.events {
             match event {
@@ -464,11 +469,31 @@ impl InputState {
             }
         }
 
+        let time_since_scroll = time - self.wheel.last_wheel_event;
+        let stopped_scrolling = !self.wheel.is_scrolling();
+        const CROSS_AXIS_THRESHOLD: f32 = 1.0;
+        let scrolling_cross_axis = scroll_focus.is_some_and(|(_, axes)| {
+            if axes[0] && axes[1] {
+                return false;
+            }
+            let (main, cross) = if axes[0] {
+                (smooth_scroll_delta.x, smooth_scroll_delta.y)
+            } else {
+                (smooth_scroll_delta.y, smooth_scroll_delta.x)
+            };
+            let diff = cross.abs() - main.abs();
+            diff > CROSS_AXIS_THRESHOLD
+        });
+        if (stopped_scrolling && time_since_scroll > 0.1) || scrolling_cross_axis {
+            scroll_focus = None;
+        }
+
         Self {
             pointer,
             touch_states: self.touch_states,
 
             wheel: self.wheel,
+            scroll_focus,
             smooth_scroll_delta,
             zoom_factor_delta,
             rotation_radians,
@@ -1566,7 +1591,9 @@ impl InputState {
             raw,
             pointer,
             touch_states,
+
             wheel,
+            scroll_focus,
             smooth_scroll_delta,
             rotation_radians,
             zoom_factor_delta,
