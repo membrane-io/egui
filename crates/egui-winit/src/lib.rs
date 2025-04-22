@@ -438,10 +438,12 @@ impl State {
                 }
             }
             WindowEvent::HoveredFile(path) => {
-                self.egui_input.hovered_items.push(egui::HoveredFile {
-                    path: Some(path.clone()),
-                    ..Default::default()
-                });
+                self.egui_input
+                    .hovered_items
+                    .push(egui::HoveredItem::File(egui::HoveredFile {
+                        path: Some(path.clone()),
+                        ..Default::default()
+                    }));
                 EventResponse {
                     repaint: true,
                     consumed: false,
@@ -456,10 +458,12 @@ impl State {
             }
             WindowEvent::DroppedFile(path) => {
                 self.egui_input.hovered_items.clear();
-                self.egui_input.dropped_items.push(egui::DroppedFile {
-                    path: Some(path.clone()),
-                    ..Default::default()
-                });
+                self.egui_input
+                    .dropped_items
+                    .push(egui::DroppedItem::File(egui::DroppedFile {
+                        path: Some(path.clone()),
+                        ..Default::default()
+                    }));
                 EventResponse {
                     repaint: true,
                     consumed: false,
@@ -1067,6 +1071,7 @@ impl State {
             accesskit_update,
             num_completed_passes: _,    // `egui::Context::run` handles this
             request_discard_reasons: _, // `egui::Context::run` handles this
+            native_drag_payload: _,
         } = platform_output;
 
         for command in commands {
