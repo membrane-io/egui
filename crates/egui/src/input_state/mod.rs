@@ -5,8 +5,9 @@ use crate::data::input::{
     TouchDeviceId, ViewportInfo, NUM_POINTER_BUTTONS,
 };
 use crate::{
-    emath::{vec2, NumExt as _, Pos2, Rect, Vec2},
+    emath::{vec2, NumExt as _, Pos2, Rect, Vec2, Vec2b},
     util::History,
+    Id,
 };
 use std::{
     collections::{BTreeMap, HashSet},
@@ -112,6 +113,9 @@ pub struct InputState {
     //
     /// Time of the last scroll event.
     last_scroll_time: f64,
+
+    /// Used to track the current part of the ui using scrolling.
+    pub scroll_focus: Option<(Id, Vec2b)>,
 
     /// Used for smoothing the scroll delta.
     unprocessed_scroll_delta: Vec2,
@@ -238,6 +242,7 @@ impl Default for InputState {
             touch_states: Default::default(),
 
             last_scroll_time: f64::NEG_INFINITY,
+            scroll_focus: Default::default(),
             unprocessed_scroll_delta: Vec2::ZERO,
             unprocessed_scroll_delta_for_zoom: 0.0,
             raw_scroll_delta: Vec2::ZERO,
@@ -297,6 +302,7 @@ impl InputState {
         let mut unprocessed_scroll_delta_for_zoom = self.unprocessed_scroll_delta_for_zoom;
         let mut smooth_scroll_delta = Vec2::ZERO;
         let mut smooth_scroll_delta_for_zoom = 0.0;
+        let mut scroll_focus = self.scroll_focus;
 
         for event in &mut new.events {
             match event {
@@ -414,11 +420,31 @@ impl InputState {
             self.last_scroll_time
         };
 
+        let time_since_scroll = time - last_scroll_time;
+        let stopped_scrolling = !is_scrolling;
+        const CROSS_AXIS_THRESHOLD: f32 = 1.0;
+        let scrolling_cross_axis = scroll_focus.is_some_and(|(_, axes)| {
+            if axes[0] && axes[1] {
+                return false;
+            }
+            let (main, cross) = if axes[0] {
+                (smooth_scroll_delta.x, smooth_scroll_delta.y)
+            } else {
+                (smooth_scroll_delta.y, smooth_scroll_delta.x)
+            };
+            let diff = cross.abs() - main.abs();
+            diff > CROSS_AXIS_THRESHOLD
+        });
+        if (stopped_scrolling && time_since_scroll > 0.1) || scrolling_cross_axis {
+            scroll_focus = None;
+        }
+
         Self {
             pointer,
             touch_states: self.touch_states,
 
             last_scroll_time,
+            scroll_focus,
             unprocessed_scroll_delta,
             unprocessed_scroll_delta_for_zoom,
             raw_scroll_delta,
@@ -1363,6 +1389,7 @@ impl InputState {
             touch_states,
 
             last_scroll_time,
+            scroll_focus,
             unprocessed_scroll_delta,
             unprocessed_scroll_delta_for_zoom,
             raw_scroll_delta,
