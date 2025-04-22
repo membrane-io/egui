@@ -1176,7 +1176,15 @@ impl Prepared {
             && ui.ctx().dragged_id().is_none()
             || is_dragging_background;
 
-        if scroll_source.mouse_wheel && ui.is_enabled() && is_hovering_outer_rect {
+
+        let scroll_focus = ui.ctx().input_mut(|input| input.scroll_focus);
+        let someone_else_scrolling = scroll_focus.is_some_and(|(other_id, _)| other_id != id);
+
+        if scroll_source.mouse_wheel
+            && ui.is_enabled()
+            && is_hovering_outer_rect
+            && !someone_else_scrolling
+        {
             let always_scroll_enabled_direction = ui.style().always_scroll_the_only_direction
                 && direction_enabled[0] != direction_enabled[1];
             for d in 0..2 {
@@ -1199,6 +1207,8 @@ impl Prepared {
 
                         // Clear scroll delta so no parent scroll will use it:
                         ui.input_mut(|input| {
+                            input.scroll_focus = Some((id, content_is_too_large));
+
                             if always_scroll_enabled_direction {
                                 input.smooth_scroll_delta()[0] = 0.0;
                                 input.smooth_scroll_delta()[1] = 0.0;
