@@ -371,7 +371,7 @@ impl Response {
     /// MEMBRANE: Is a native drag starting on this widget?
     #[inline]
     pub fn native_drag_started(&self) -> bool {
-        self.contains_pointer() && self.ctx.input(|i| i.raw.native_drag_starting)
+        self.hovered() && self.ctx.input(|i| i.raw.native_drag_starting)
     }
 
     /// The widget is being dragged.
