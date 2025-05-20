@@ -467,7 +467,8 @@ impl Area {
         state.interactable = interactable;
 
         let size = *state.size.get_or_insert_with(|| {
-            sizing_pass = true;
+            // MEMBRANE: skip sizing pass if default size is provided
+            sizing_pass = !default_size.is_finite();
 
             // during the sizing pass we will use this as the max size
             let mut size = default_size;
