@@ -1177,7 +1177,8 @@ pub struct Areas {
     /// If several layers want to be on top, they will keep their relative order.
     /// This means closing three windows and then reopening them all in one frame
     /// results in them being sent to the top and keeping their previous internal order.
-    wants_to_be_on_top: ahash::HashSet<LayerId>,
+    // MEMBRANE: Make `move_to_top` deterministic depending on the order in which it's called.
+    wants_to_be_on_top: Vec<LayerId>,
 
     /// The sublayers that each layer has.
     ///
@@ -1281,7 +1282,7 @@ impl Areas {
 
     pub fn move_to_top(&mut self, layer_id: LayerId) {
         self.visible_areas_current_frame.insert(layer_id);
-        self.wants_to_be_on_top.insert(layer_id);
+        self.wants_to_be_on_top.push(layer_id);
 
         if !self.order.contains(&layer_id) {
             self.order.push(layer_id);
@@ -1355,7 +1356,16 @@ impl Areas {
         std::mem::swap(visible_areas_last_frame, visible_areas_current_frame);
         visible_areas_current_frame.clear();
 
-        order.sort_by_key(|layer| (layer.order, wants_to_be_on_top.contains(layer)));
+        order.sort_by_key(|layer| {
+            (
+                layer.order,
+                wants_to_be_on_top
+                    .iter()
+                    .position(|l| l == layer)
+                    .map(|i| i + 1)
+                    .unwrap_or(0),
+            )
+        });
         wants_to_be_on_top.clear();
 
         // For all layers with sublayers, put the sublayers directly after the parent layer:
