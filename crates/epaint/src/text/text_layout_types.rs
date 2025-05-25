@@ -819,7 +819,8 @@ pub struct Glyph {
     /// Only used during layout, then set to an invalid value in order to
     /// enable the paragraph-concat optimization path without having to
     /// adjust `section_index` when concatting.
-    pub(crate) section_index: u32,
+    /// MEMBRANE: Keep these values since we use them to render Markdown
+    pub section_index: u32,
 
     /// Which is our first vertex in [`RowVisuals::mesh`].
     pub first_vertex: u32,
