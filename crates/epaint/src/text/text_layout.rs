@@ -707,9 +707,11 @@ fn galley_from_rows(
         num_indices += row.visuals.mesh.indices.len();
 
         row.section_index_at_start = u32::MAX; // No longer in use.
-        for glyph in &mut row.glyphs {
-            glyph.section_index = u32::MAX; // No longer in use.
-        }
+
+        // MEMBRANE: Keep these values since we use them to render Markdown
+        // for glyph in &mut row.glyphs {
+        //     glyph.section_index = u32::MAX; // No longer in use.
+        // }
     }
 
     let mut galley = Galley {
