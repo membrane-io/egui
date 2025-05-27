@@ -806,7 +806,10 @@ impl ScrollArea {
         let dt = ui.input(|i| i.stable_dt).at_most(0.1);
 
         let background_drag_response =
-            if scroll_source.drag && ui.is_enabled() && state.content_is_too_large.any() {
+            if scroll_source.drag
+                && ui.input(|i| i.has_touch_screen())
+                && ui.is_enabled()
+                && state.content_is_too_large.any() {
                 // Drag contents to scroll (for touch screens mostly).
                 // We must do this BEFORE adding content to the `ScrollArea`,
                 // or we will steal input from the widgets we contain.
