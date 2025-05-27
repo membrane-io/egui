@@ -305,11 +305,14 @@ impl Painter {
 impl Painter {
     #[expect(clippy::needless_pass_by_value)]
     pub fn debug_rect(&self, rect: Rect, color: Color32, text: impl ToString) {
+        // MEMBRANE: Make debug rects more subtle so they can be more easily seen when stacked
+        let dark = self.ctx().style().visuals.dark_mode;
+        let factor = if dark { 0.005 } else { 0.015 };
         self.rect(
             rect,
             0.0,
-            color.additive().linear_multiply(0.015),
-            (1.0, color),
+            color.additive().linear_multiply(factor),
+            (1.0, color.gamma_multiply(0.3333)),
             StrokeKind::Outside,
         );
         let text = text.to_string();
