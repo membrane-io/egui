@@ -782,7 +782,9 @@ impl ScrollArea {
         let viewport = Rect::from_min_size(Pos2::ZERO + state.offset, inner_size);
         let dt = ui.input(|i| i.stable_dt).at_most(0.1);
 
+        // MEMBRANE: only enable drag-to-scroll on touchscreens
         if scroll_source.drag
+            && ui.input(|i| i.has_touch_screen())
             && ui.is_enabled()
             && (state.content_is_too_large[0] || state.content_is_too_large[1])
         {
