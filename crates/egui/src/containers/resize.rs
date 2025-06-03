@@ -48,6 +48,8 @@ pub struct Resize {
     drag_corner: Align2,
 
     snap_to_size: Option<(Vec2, Vec2)>,
+    // MEMBRANE
+    corner_color: Option<Color32>,
 }
 
 impl Default for Resize {
@@ -62,6 +64,8 @@ impl Default for Resize {
             with_stroke: true,
             drag_corner: Align2::RIGHT_BOTTOM,
             snap_to_size: None,
+            // MEMBRANE
+            corner_color: None,
         }
     }
 }
@@ -218,6 +222,12 @@ impl Resize {
             state.requested_size = Some(size);
             state.store(ctx, id);
         }
+    }
+
+    /// MEMBRANE: Set corner color
+    pub fn with_corner_color(mut self, color: Color32) -> Self {
+        self.corner_color = Some(color);
+        self
     }
 }
 
@@ -431,7 +441,16 @@ impl Resize {
         }
 
         if let Some(corner_response) = corner_response {
-            paint_resize_corner(ui, &corner_response, self.drag_corner);
+            // MEMBRANE
+            let corner_color = self
+                .corner_color
+                .unwrap_or_else(|| ui.style().interact(&corner_response).fg_stroke.color);
+            paint_resize_corner_with_style(
+                ui,
+                &corner_response.rect,
+                corner_color,
+                self.drag_corner,
+            );
 
             if corner_response.hovered() || corner_response.dragged() {
                 let resize_cursor = match self.drag_corner {
@@ -484,8 +503,9 @@ pub fn paint_resize_corner_with_style(
         width: 1.0, // Set width to 1.0 to prevent overlapping
         color: color.into(),
     };
-
-    while w <= rect.width() && w <= rect.height() {
+    // MEMBRANE: use 2 lines
+    let mut line_count = 0;
+    while w <= rect.width() && w <= rect.height() && line_count < 2 {
         painter.line_segment(
             [
                 pos2(cp.x - w * corner.x().to_sign(), cp.y),
@@ -494,5 +514,6 @@ pub fn paint_resize_corner_with_style(
             stroke,
         );
         w += 4.0;
+        line_count += 1;
     }
 }
