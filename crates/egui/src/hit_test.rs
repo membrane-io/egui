@@ -423,15 +423,17 @@ fn find_closest_within(
 
         let dist_sq = widget.interact_rect.distance_sq_to_pos(pos);
 
-        if let Some(closest) = closest {
-            if dist_sq == closest_dist_sq {
-                // It's a tie! Pick the thin candidate over the thick one.
-                // This makes it easier to hit a thin resize-handle, for instance:
-                if should_prioritize_hits_on_back(closest.interact_rect, widget.interact_rect) {
-                    continue;
-                }
-            }
-        }
+        // MEMBRANE: Disabling this because it makes resize handles hard to hit when a ScrollArea's is inside of it because the handle rect is usually very thin.
+        // if let Some(closest) = closest {
+        //     if dist_sq == closest_dist_sq {
+        //         log::info!("XXX tie: {:?}, {:?}", closest.id, widget.id);
+        //         // It's a tie! Pick the thin candidate over the thick one.
+        //         // This makes it easier to hit a thin resize-handle, for instance:
+        //         if should_prioritize_hits_on_back(closest.interact_rect, widget.interact_rect) {
+        //             continue;
+        //         }
+        //     }
+        // }
 
         // In case of a tie, take the last one = the one on top.
         if dist_sq <= closest_dist_sq {
@@ -448,21 +450,22 @@ fn find_closest_within(
 /// `back` should be behind the `front` widget.
 ///
 /// Returns true if `back` is a small hit-target and `front` is not.
-fn should_prioritize_hits_on_back(back: Rect, front: Rect) -> bool {
-    if front.contains_rect(back) {
-        return false; // back widget is fully occluded; no way to hit it
-    }
+// MEMBRANE: Disabling this because it makes resize handles hard to hit when a ScrollArea's is inside of it because the handle rect is usually very thin.
+// fn should_prioritize_hits_on_back(back: Rect, front: Rect) -> bool {
+//     if front.contains_rect(back) {
+//         return false; // back widget is fully occluded; no way to hit it
+//     }
 
-    // Reduce each rect to its width or height, whichever is smaller:
-    let back = back.width().min(back.height());
-    let front = front.width().min(front.height());
+//     // Reduce each rect to its width or height, whichever is smaller:
+//     let back = back.width().min(back.height());
+//     let front = front.width().min(front.height());
 
-    // These are hard-coded heuristics that could surely be improved.
-    let back_is_much_thinner = back <= 0.5 * front;
-    let back_is_thin = back <= 16.0;
+//     // These are hard-coded heuristics that could surely be improved.
+//     let back_is_much_thinner = back <= 0.5 * front;
+//     let back_is_thin = back <= 16.0;
 
-    back_is_much_thinner && back_is_thin
-}
+//     back_is_much_thinner && back_is_thin
+// }
 
 #[cfg(test)]
 mod tests {
