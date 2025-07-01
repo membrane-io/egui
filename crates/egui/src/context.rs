@@ -1185,7 +1185,7 @@ impl Context {
     ///
     /// `allow_focus` should usually be true, unless you call this function multiple times with the
     /// same widget, then `allow_focus` should only be true once (like in [`Ui::new`] (true) and [`Ui::remember_min_rect`] (false)).
-    pub(crate) fn create_widget(
+    pub fn create_widget(
         &self,
         w: WidgetRect,
         allow_focus: bool,
