@@ -1165,7 +1165,7 @@ impl Context {
     ///
     /// `allow_focus` should usually be true, unless you call this function multiple times with the
     /// same widget, then `allow_focus` should only be true once (like in [`Ui::new`] (true) and [`Ui::remember_min_rect`] (false)).
-    pub(crate) fn create_widget(&self, w: WidgetRect, allow_focus: bool) -> Response {
+    pub fn create_widget(&self, w: WidgetRect, allow_focus: bool) -> Response {
         let interested_in_focus = w.enabled
             && w.sense.is_focusable()
             && self.memory(|mem| mem.allows_interaction(w.layer_id));
