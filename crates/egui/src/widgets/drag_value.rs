@@ -102,7 +102,8 @@ impl<'a> DragValue<'a> {
             format: ValueFormat::default(),
             classes: Classes::default().with_class(Self::CLASS),
             min_size: None,
-            clip_text: false,
+            // MEMBRANE: clip by default, so that the text edit does not change the layout.
+            clip_text: true,
         }
     }
 
@@ -391,7 +392,7 @@ impl<'a> DragValue<'a> {
 
     /// Keep the value inside the widget's width when text-editing it.
     ///
-    /// Default: `false`, which lets the widget widen to fit whatever has been typed, carrying the
+    /// Default: `true` (MEMBRANE). `false` lets the widget widen to fit whatever has been typed, carrying the
     /// surrounding layout with it. When `true` the widget holds its width and the text scrolls
     /// inside it, following the cursor.
     #[inline]
