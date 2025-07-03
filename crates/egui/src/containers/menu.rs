@@ -446,6 +446,10 @@ impl SubMenu {
 
         #[expect(clippy::unwrap_used)] // Since we are a child of that ui, this should always exist
         let menu_root_response = ui.ctx().read_response(menu_id).unwrap();
+        let to_global = ui
+            .ctx()
+            .layer_transform_to_global(menu_root_response.layer_id)
+            .unwrap_or_default();
 
         let hover_pos = ui.ctx().pointer_hover_pos();
 
@@ -453,7 +457,7 @@ impl SubMenu {
         let menu_rect = menu_root_response.rect - frame.total_margin();
         let is_hovering_menu = hover_pos.is_some_and(|pos| {
             ui.ctx().layer_id_at(pos) == Some(menu_root_response.layer_id)
-                && menu_rect.contains(pos)
+                && (to_global * menu_rect).contains(pos)
         });
 
         let is_any_open = open_item.is_some();
@@ -462,9 +466,10 @@ impl SubMenu {
 
         // We expand the button rect so there is no empty space where no menu is shown
         // TODO(lucasmerlin): Instead, maybe make item_spacing.y 0.0?
-        let button_rect = button_response
-            .rect
-            .expand2(ui.style().spacing.item_spacing / 2.0);
+        let button_rect = to_global
+            * button_response
+                .rect
+                .expand2(ui.style().spacing.item_spacing / 2.0);
 
         // In theory some other widget could cover the button and this check would still pass
         // But since we check if no other menu is open, nothing should be able to cover the button
