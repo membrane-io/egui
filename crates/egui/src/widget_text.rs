@@ -1,3 +1,4 @@
+use emath::Vec2;
 use epaint::text::{IntoTag, TextFormat, VariationCoords};
 use std::fmt::Formatter;
 use std::{borrow::Cow, sync::Arc};
@@ -31,7 +32,7 @@ pub struct RichText {
     family: Option<FontFamily>,
     text_style: Option<TextStyle>,
     background_color: Color32,
-    expand_bg: f32,
+    expand_bg: Vec2,
     text_color: Option<Color32>,
     coords: VariationCoords,
     code: bool,
@@ -53,7 +54,7 @@ impl Default for RichText {
             family: Default::default(),
             text_style: Default::default(),
             background_color: Default::default(),
-            expand_bg: 1.0,
+            expand_bg: Vec2::splat(1.0),
             text_color: Default::default(),
             coords: Default::default(),
             code: Default::default(),
