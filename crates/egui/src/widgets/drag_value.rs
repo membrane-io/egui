@@ -53,6 +53,7 @@ struct EditState {
 /// ```
 #[must_use = "You should put this widget in a ui with `ui.add(widget);`"]
 pub struct DragValue<'a> {
+    id: Option<Id>,
     get_set_value: GetSetValue<'a>,
     speed: f64,
     range: RangeInclusive<f64>,
@@ -93,6 +94,7 @@ impl<'a> DragValue<'a> {
     /// and returns the value either way.
     pub fn from_get_set(get_set_value: impl 'a + FnMut(Option<f64>) -> f64) -> Self {
         Self {
+            id: None,
             get_set_value: Box::new(get_set_value),
             speed: 1.0,
             range: f64::NEG_INFINITY..=f64::INFINITY,
@@ -102,6 +104,12 @@ impl<'a> DragValue<'a> {
             min_size: None,
             clip_text: false,
         }
+    }
+
+    /// Set the ID of the widget.
+    pub fn id(mut self, id: Id) -> Self {
+        self.id = Some(id);
+        self
     }
 
     /// The minimum size of the drag value, in both its dragged and its text-edited state.
@@ -408,6 +416,7 @@ impl Widget for DragValue<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let mut atoms = self.atoms();
         let Self {
+            id,
             mut get_set_value,
             speed,
             range,
@@ -444,7 +453,7 @@ impl Widget for DragValue<'_> {
 
         let shift = ui.input(|i| i.modifiers.shift_only());
         // The widget has the same ID whether it's in edit or button mode.
-        let id = ui.next_auto_id();
+        let id = id.unwrap_or_else(|| ui.next_auto_id());
         let is_slow_speed = shift && ui.ctx().is_being_dragged(id);
 
         // The following ensures that when a `DragValue` receives focus,
