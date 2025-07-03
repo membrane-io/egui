@@ -809,10 +809,10 @@ fn add_row_backgrounds(point_scale: PointScale, job: &LayoutJob, row: &Row, mesh
         return;
     }
 
-    let mut end_run = |start: Option<(Color32, Rect, f32)>, stop_x: f32| {
+    let mut end_run = |start: Option<(Color32, Rect, Vec2)>, stop_x: f32| {
         if let Some((color, start_rect, expand)) = start {
             let rect = Rect::from_min_max(start_rect.left_top(), pos2(stop_x, start_rect.bottom()));
-            let rect = rect.expand(expand);
+            let rect = rect.expand2(expand);
             let rect = rect.round_to_pixels(point_scale.pixels_per_point());
             mesh.add_colored_rect(rect, color);
         }
