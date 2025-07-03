@@ -559,7 +559,7 @@ impl Widget for DragValue<'_> {
                 .unwrap_or_else(|| value_text.clone());
             let response = ui.add(
                 TextEdit::singleline(&mut value_text)
-                    .clip_text(false)
+                    .clip_text(true)
                     .horizontal_align(ui.layout().horizontal_align())
                     .vertical_align(ui.layout().vertical_align())
                     .margin(ui.spacing().button_padding)
