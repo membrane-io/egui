@@ -467,12 +467,14 @@ fn install_dpr_change_event(web_runner: &WebRunner) -> Result<(), JsValue> {
         log::debug!("Device Pixel Ratio changed from {original_dpr} to {new_dpr}");
 
         if true {
-            // Explicitly resize canvas to match the new DPR.
-            // This is a bit ugly, but I haven't found a better way to do it.
-            let canvas = app_runner.canvas();
-            canvas.set_width((canvas.width() as f32 * new_dpr / original_dpr).round() as _);
-            canvas.set_height((canvas.height() as f32 * new_dpr / original_dpr).round() as _);
-            log::debug!("Resized canvas to {}x{}", canvas.width(), canvas.height());
+            // Instead of resizing the canvas here. We just recreate the ResizeObserver which always
+            // fires on creation and resizes the canvas. Otherwise, it can happen that the DPR
+            // changes but the canvas size stays the same (e.g. if you move the browser between
+            // monitors) and the only reliable way to know the pixel size of the canvas is by
+            // reading it from the ResizeObserver event.
+            web_runner
+                .reset_resize_observer(app_runner.canvas().clone())
+                .unwrap();
         }
 
         // It may be tempting to call `resize_observer.observe(&canvas)` here,
@@ -1142,7 +1144,7 @@ impl ResizeObserverContext {
                     canvas.set_width(width);
                     canvas.set_height(height);
 
-                    // force an immediate repaint
+                    // Force an immediate repaint
                     runner_lock.needs_repaint.repaint_asap();
                     paint_if_needed(&mut runner_lock);
                     drop(runner_lock);
