@@ -79,19 +79,20 @@ impl WebRunner {
             self.app_runner.replace(Some(app_runner));
         }
 
-        {
-            let resize_observer = events::ResizeObserverContext::new(self)?;
-
-            // Properly size the canvas. Will also call `self.request_animation_frame()` (eventually)
-            resize_observer.observe(&canvas);
-
-            self.resize_observer.replace(Some(resize_observer));
-        }
+        self.reset_resize_observer(canvas)?;
 
         events::install_event_handlers(self)?;
 
         log::info!("event handlers installed.");
 
+        Ok(())
+    }
+
+    /// Properly size the canvas. Will also call `self.request_animation_frame()` (eventually)
+    pub fn reset_resize_observer(&self, canvas: web_sys::HtmlCanvasElement) -> Result<(), JsValue> {
+        let resize_observer = events::ResizeObserverContext::new(self)?;
+        resize_observer.observe(&canvas);
+        self.resize_observer.replace(Some(resize_observer));
         Ok(())
     }
 
