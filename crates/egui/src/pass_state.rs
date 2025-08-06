@@ -119,7 +119,7 @@ impl DebugRect {
             } else {
                 Color32::LIGHT_BLUE
             };
-            let rect_bg_color = Color32::BLUE.gamma_multiply(0.5);
+            let rect_bg_color = Color32::BLUE.gamma_multiply(0.1);
             painter.rect(
                 rect,
                 0.0,
@@ -130,7 +130,7 @@ impl DebugRect {
         }
 
         if !callstack.is_empty() {
-            let font_id = FontId::monospace(12.0);
+            let font_id = FontId::monospace(8.0);
             let text = format!("{callstack}\n\n(click to copy)");
             let text_color = Color32::WHITE;
             let galley = painter.layout_no_wrap(text, font_id, text_color);
@@ -230,7 +230,7 @@ pub struct PassState {
     pub highlight_next_pass: IdSet,
 
     #[cfg(debug_assertions)]
-    pub debug_rect: Option<DebugRect>,
+    pub debug_rects: Vec<DebugRect>,
 }
 
 impl Default for PassState {
@@ -249,7 +249,7 @@ impl Default for PassState {
             highlight_next_pass: Default::default(),
 
             #[cfg(debug_assertions)]
-            debug_rect: None,
+            debug_rects: Default::default(),
         }
     }
 }
@@ -271,7 +271,7 @@ impl PassState {
             highlight_next_pass,
 
             #[cfg(debug_assertions)]
-            debug_rect,
+            debug_rects,
         } = self;
 
         used_ids.clear();
@@ -286,7 +286,7 @@ impl PassState {
 
         #[cfg(debug_assertions)]
         {
-            *debug_rect = None;
+            *debug_rects = Default::default();
         }
 
         *accesskit_state = None;

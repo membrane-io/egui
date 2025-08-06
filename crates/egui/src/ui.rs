@@ -3189,10 +3189,12 @@ fn register_rect(ui: &Ui, rect: Rect) {
     let is_clicking = ui.input(|i| i.pointer.could_any_button_be_click());
 
     #[cfg(feature = "callstack")]
-    let callstack = crate::callstack::capture();
+    let mut callstack = crate::callstack::capture();
 
     #[cfg(not(feature = "callstack"))]
-    let callstack = String::default();
+    let mut callstack = String::default();
+
+    callstack.push_str(format!("(id: {:?})\n", ui.id()).as_str());
 
     // We only show one debug rectangle, or things get confusing:
     let debug_rect = pass_state::DebugRect {
@@ -3203,16 +3205,19 @@ fn register_rect(ui: &Ui, rect: Rect) {
 
     let mut kept = false;
     ui.ctx().pass_state_mut(|fs| {
-        if let Some(final_debug_rect) = &mut fs.debug_rect {
-            // or maybe pick the one with deepest callstack?
-            if final_debug_rect.rect.contains_rect(rect) {
-                *final_debug_rect = debug_rect;
-                kept = true;
-            }
-        } else {
-            fs.debug_rect = Some(debug_rect);
-            kept = true;
-        }
+        // if let Some(final_debug_rect) = &mut fs.debug_rect {
+        //     // or maybe pick the one with deepest callstack?
+        //     if final_debug_rect.rect.contains_rect(rect) {
+        //         *final_debug_rect = debug_rect;
+        //         kept = true;
+        //     }
+        // } else {
+        //     fs.debug_rect = Some(debug_rect);
+        //     kept = true;
+        // }
+
+        fs.debug_rects.push(debug_rect);
+        kept = true;
     });
     if !kept {
         return;

@@ -13,36 +13,58 @@ struct Frame {
 #[inline(never)]
 pub fn capture() -> String {
     let mut frames = vec![];
-    let mut depth = 0;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut depth = 0;
 
-    backtrace::trace(|frame| {
-        // Resolve this instruction pointer to a symbol name
-        backtrace::resolve_frame(frame, |symbol| {
-            let mut file_and_line = symbol.filename().map(shorten_source_file_path);
+        backtrace::trace(|frame| {
+            // Resolve this instruction pointer to a symbol name
+            backtrace::resolve_frame(frame, |symbol| {
+                let mut file_and_line = symbol.filename().map(shorten_source_file_path);
 
-            if let Some(file_and_line) = &mut file_and_line
-                && let Some(line_nr) = symbol.lineno()
-            {
-                file_and_line.push_str(&format!(":{line_nr}"));
-            }
-            let file_and_line = file_and_line.unwrap_or_default();
+                if let Some(file_and_line) = &mut file_and_line
+                    && let Some(line_nr) = symbol.lineno()
+                {
+                    file_and_line.push_str(&format!(":{line_nr}"));
+                }
+                let file_and_line = file_and_line.unwrap_or_default();
 
-            let name = symbol
-                .name()
-                .map(|name| clean_symbol_name(name.to_string()))
-                .unwrap_or_default();
+                let name = symbol
+                    .name()
+                    .map(|name| clean_symbol_name(name.to_string()))
+                    .unwrap_or_default();
 
-            frames.push(Frame {
-                depth,
-                name,
-                file_and_line,
+                frames.push(Frame {
+                    depth,
+                    name,
+                    file_and_line,
+                });
             });
+
+            depth += 1; // note: we can resolve multiple symbols on the same frame.
+
+            true // keep going to the next frame
         });
+    }
 
-        depth += 1; // note: we can resolve multiple symbols on the same frame.
-
-        true // keep going to the next frame
-    });
+    #[cfg(target_arch = "wasm32")]
+    {
+        use js_sys::{Error, Reflect};
+        use wasm_bindgen::JsValue;
+        let error = Error::new("");
+        let stack = Reflect::get(&error, &JsValue::from_str("stack")).unwrap();
+        let stack = stack.as_string().unwrap();
+        let stack = stack.split("\n").collect::<Vec<&str>>();
+        for (i, frame) in stack.into_iter().enumerate() {
+            let start = frame.find(".wasm.").map(|p| p + 6).unwrap_or_default();
+            let end = frame.find("(http://").unwrap_or(frame.len());
+            frames.push(Frame {
+                depth: i,
+                name: frame[start..end].to_owned(),
+                file_and_line: "".to_owned(),
+            });
+        }
+    }
 
     if frames.is_empty() {
         return
@@ -87,17 +109,19 @@ pub fn capture() -> String {
         }
 
         // Remove stuff that isn't user calls:
-        let skip_prefixes = [
+        let skip_prefixes: &[&str] = &[
             // "backtrace::", // not needed, since we cut at egui::callstack::capture
-            "egui::",
-            "<egui::",
-            "<F as egui::widgets::Widget>",
-            "egui_plot::",
-            "egui_extras::",
-            "core::ptr::drop_in_place<egui::ui::Ui>",
-            "eframe::",
-            "core::ops::function::FnOnce::call_once",
-            "<alloc::boxed::Box<F,A> as core::ops::function::FnOnce<Args>>::call_once",
+            // "egui::",
+            // "<egui::",
+            // "<F as egui::widgets::Widget>",
+            // "egui_plot::",
+            // "egui_extras::",
+            // "core::ptr::drop_in_place<egui::ui::Ui>",
+            // "eframe::",
+            // "core::ops::function::FnOnce::call_once",
+            // "<alloc::boxed::Box<F,A> as core::ops::function::FnOnce<Args>>::call_once",
+            // "<egui::ui::Ui as core::ops::drop::Drop>::drop",
+            // "egui::ui::register_rect",
         ];
         for prefix in skip_prefixes {
             if frame.name.starts_with(prefix) {

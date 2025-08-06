@@ -1317,6 +1317,7 @@ dependencies = [
  "document-features",
  "emath",
  "epaint",
+ "js-sys",
  "log",
  "nohash-hasher",
  "profiling",
@@ -1324,6 +1325,7 @@ dependencies = [
  "serde",
  "smallvec",
  "unicode-segmentation",
+ "wasm-bindgen",
 ]
 
 [[package]]

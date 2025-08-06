@@ -24,7 +24,7 @@ rustdoc-args = ["--generate-link-to-definition"]
 
 
 [features]
-default = ["default_fonts"]
+default = ["default_fonts", "callstack"]
 
 ## [`bytemuck`](https://docs.rs/bytemuck) enables you to cast [`epaint::Vertex`], [`emath::Vec2`] etc to `&[u8]`.
 bytemuck = ["epaint/bytemuck"]
@@ -32,7 +32,7 @@ bytemuck = ["epaint/bytemuck"]
 ## Show a debug-ui on hover including the stacktrace to the hovered item.
 ## This is very useful in finding the code that creates a part of the UI.
 ## Does not work on web.
-callstack = ["dep:backtrace"]
+callstack = ["dep:backtrace", "dep:js-sys", "dep:wasm-bindgen"]
 
 ## [`cint`](https://docs.rs/cint) enables interoperability with other color libraries.
 cint = ["epaint/cint"]
@@ -83,6 +83,11 @@ unicode-segmentation.workspace = true
 #! ### Optional dependencies
 
 backtrace = { workspace = true, optional = true }
+
+# TODO(MEMBRANE): remove this in favor of our devtools
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = { version = "0.3", optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
 
 ## Enable this when generating docs.
 document-features = { workspace = true, optional = true }
