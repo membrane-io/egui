@@ -24,7 +24,7 @@ rustdoc-args = ["--generate-link-to-definition"]
 
 
 [features]
-default = ["default_fonts"]
+default = ["default_fonts", "callstack"]
 
 ## Exposes detailed accessibility implementation required by platform
 ## accessibility APIs. Also requires support in the egui integration.
@@ -36,7 +36,7 @@ bytemuck = ["epaint/bytemuck"]
 ## Show a debug-ui on hover including the stacktrace to the hovered item.
 ## This is very useful in finding the code that creates a part of the UI.
 ## Does not work on web.
-callstack = ["dep:backtrace"]
+callstack = ["dep:backtrace", "dep:js-sys", "dep:wasm-bindgen"]
 
 ## [`cint`](https://docs.rs/cint) enables interoperability with other color libraries.
 cint = ["epaint/cint"]
@@ -93,6 +93,11 @@ unicode-segmentation.workspace = true
 accesskit = { workspace = true, optional = true }
 
 backtrace = { workspace = true, optional = true }
+
+# TODO(MEMBRANE): this should be done in
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = { version = "0.3", optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
 
 ## Enable this when generating docs.
 document-features = { workspace = true, optional = true }

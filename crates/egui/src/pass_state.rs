@@ -2,7 +2,6 @@ use ahash::HashMap;
 
 use crate::{id::IdSet, style, Align, Id, IdMap, LayerId, Rangef, Rect, Vec2, WidgetRects};
 
-#[cfg(debug_assertions)]
 use crate::{pos2, Align2, Color32, FontId, NumExt as _, Painter};
 
 /// Reset at the start of each frame.
@@ -74,7 +73,6 @@ pub struct AccessKitPassState {
     pub parent_stack: Vec<Id>,
 }
 
-#[cfg(debug_assertions)]
 #[derive(Clone)]
 pub struct DebugRect {
     pub rect: Rect,
@@ -82,7 +80,6 @@ pub struct DebugRect {
     pub is_clicking: bool,
 }
 
-#[cfg(debug_assertions)]
 impl DebugRect {
     pub fn paint(self, painter: &Painter) {
         let Self {
@@ -120,7 +117,7 @@ impl DebugRect {
             } else {
                 Color32::LIGHT_BLUE
             };
-            let rect_bg_color = Color32::BLUE.gamma_multiply(0.5);
+            let rect_bg_color = Color32::BLUE.gamma_multiply(0.1);
             painter.rect(
                 rect,
                 0.0,
@@ -131,7 +128,7 @@ impl DebugRect {
         }
 
         if !callstack.is_empty() {
-            let font_id = FontId::monospace(12.0);
+            let font_id = FontId::monospace(8.0);
             let text = format!("{callstack}\n\n(click to copy)");
             let text_color = Color32::WHITE;
             let galley = painter.layout_no_wrap(text, font_id, text_color);
@@ -231,8 +228,7 @@ pub struct PassState {
     /// Highlight these widgets the next pass.
     pub highlight_next_pass: IdSet,
 
-    #[cfg(debug_assertions)]
-    pub debug_rect: Option<DebugRect>,
+    pub debug_rects: Vec<DebugRect>,
 }
 
 impl Default for PassState {
@@ -251,8 +247,7 @@ impl Default for PassState {
             accesskit_state: None,
             highlight_next_pass: Default::default(),
 
-            #[cfg(debug_assertions)]
-            debug_rect: None,
+            debug_rects: Default::default(),
         }
     }
 }
@@ -274,8 +269,7 @@ impl PassState {
             accesskit_state,
             highlight_next_pass,
 
-            #[cfg(debug_assertions)]
-            debug_rect,
+            debug_rects,
         } = self;
 
         used_ids.clear();
@@ -288,9 +282,8 @@ impl PassState {
         *scroll_target = [None, None];
         *scroll_delta = Default::default();
 
-        #[cfg(debug_assertions)]
         {
-            *debug_rect = None;
+            *debug_rects = Default::default();
         }
 
         #[cfg(feature = "accesskit")]

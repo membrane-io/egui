@@ -345,7 +345,7 @@ impl Painter {
         color: Color32,
         text: impl ToString,
     ) -> Rect {
-        let galley = self.layout_no_wrap(text.to_string(), FontId::monospace(12.0), color);
+        let galley = self.layout_no_wrap(text.to_string(), FontId::monospace(10.0), color);
         let rect = anchor.anchor_size(pos, galley.size());
         let frame_rect = rect.expand(2.0);
 

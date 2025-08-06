@@ -445,6 +445,12 @@ struct ContextImpl {
     is_accesskit_enabled: bool,
 
     loaders: Arc<Loaders>,
+
+    /// MEMBRANE: Used to search for an by its hex prefix.
+    id_search: String,
+
+    /// MEMBRANE: Used to override the layer used for the debug painter.
+    debug_layer: Option<LayerId>,
 }
 
 impl ContextImpl {
@@ -973,6 +979,14 @@ impl Context {
         self.write(move |ctx| writer(&mut ctx.memory.data))
     }
 
+    pub fn debug_id(&self) -> String {
+        self.read(|ctx| ctx.id_search.clone())
+    }
+
+    pub fn set_debug_id(&self, debug_id: String) {
+        self.write(|ctx| ctx.id_search = debug_id);
+    }
+
     /// Read-write access to [`GraphicLayers`], where painted [`crate::Shape`]s are written to.
     #[inline]
     pub fn graphics_mut<R>(&self, writer: impl FnOnce(&mut GraphicLayers) -> R) -> R {
@@ -1204,6 +1218,26 @@ impl Context {
             self.accesskit_node_builder(w.id, |builder| res.fill_accesskit_node_common(builder));
         }
 
+        let debug_id = self.debug_id();
+        if !debug_id.is_empty() {
+            if format!("{:?}", res.id).ends_with(&debug_id) {
+                // We only show one debug rectangle, or things get confusing:
+                #[cfg(feature = "callstack")]
+                let callstack = crate::callstack::capture();
+                #[cfg(not(feature = "callstack"))]
+                let mut callstack = String::new();
+
+                let debug_rect = crate::pass_state::DebugRect {
+                    rect: res.rect,
+                    callstack,
+                    is_clicking: false,
+                };
+
+                self.pass_state_mut(|fs| {
+                    fs.debug_rects.push(debug_rect);
+                });
+            }
+        }
         res
     }
 
@@ -1411,9 +1445,18 @@ impl Context {
 
     /// Paint on top of everything else
     pub fn debug_painter(&self) -> Painter {
-        // MEMBRANE: no clipping for debug painter, important when layer is transformed
+        // MEMBRANE: no clipping for debug painter, important when layer is transformed. Also allow for layer override.
         let screen_rect = Rect::EVERYTHING;
-        Painter::new(self.clone(), LayerId::debug(), screen_rect)
+        let layer = self.read(|ctx| ctx.debug_layer.unwrap_or(LayerId::debug()));
+        Painter::new(self.clone(), layer, screen_rect)
+    }
+
+    /// MEMBRANE: can be used to override the layer used for the debug painter. Useful for the
+    /// dashboard since we want debug painting to be affected by its transform.
+    pub fn set_debug_layer(&self, layer_id: Option<LayerId>) {
+        self.write(|ctx| {
+            ctx.debug_layer = layer_id;
+        });
     }
 
     /// Print this text next to the cursor at the end of the pass.
@@ -2166,6 +2209,10 @@ impl Context {
         #[cfg(debug_assertions)]
         self.debug_painting();
 
+        for debug_rect in self.pass_state_mut(|fs| std::mem::take(&mut fs.debug_rects)) {
+            debug_rect.paint(&self.debug_painter());
+        }
+
         self.write(|ctx| ctx.end_pass())
     }
 
@@ -2298,10 +2345,6 @@ impl Context {
             if let Some(widget) = &drag {
                 paint_widget(widget, "drag", Color32::GREEN);
             }
-        }
-
-        if let Some(debug_rect) = self.pass_state_mut(|fs| fs.debug_rect.take()) {
-            debug_rect.paint(&self.debug_painter());
         }
 
         let num_multipass_in_row = self.viewport(|vp| vp.num_multipass_in_row);
