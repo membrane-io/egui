@@ -408,6 +408,12 @@ struct ContextImpl {
     is_accesskit_enabled: bool,
 
     loaders: Arc<Loaders>,
+
+    /// MEMBRANE: Used to search for an by its hex prefix.
+    id_search: String,
+
+    /// MEMBRANE: Used to override the layer used for the debug painter.
+    debug_layer: Option<LayerId>,
 }
 
 impl ContextImpl {
@@ -974,6 +980,14 @@ impl Context {
         self.write(move |ctx| writer(&mut ctx.memory.data))
     }
 
+    pub fn debug_id(&self) -> String {
+        self.read(|ctx| ctx.id_search.clone())
+    }
+
+    pub fn set_debug_id(&self, debug_id: String) {
+        self.write(|ctx| ctx.id_search = debug_id);
+    }
+
     /// Read-write access to [`GraphicLayers`], where painted [`crate::Shape`]s are written to.
     #[inline]
     pub fn graphics_mut<R>(&self, writer: impl FnOnce(&mut GraphicLayers) -> R) -> R {
@@ -1280,6 +1294,51 @@ impl Context {
                 });
         });
 
+        self.write(|ctx| {
+            use crate::{Align, pass_state::ScrollTarget, style::ScrollAnimation};
+            let viewport = ctx.viewport_for(ctx.viewport_id());
+
+            viewport
+                .input
+                .consume_accesskit_action_requests(res.id, |request| {
+                    use accesskit::Action;
+
+                    // TODO(lucasmerlin): Correctly handle the scroll unit:
+                    // https://github.com/AccessKit/accesskit/blob/e639c0e0d8ccbfd9dff302d972fa06f9766d608e/common/src/lib.rs#L2621
+                    const DISTANCE: f32 = 100.0;
+
+                    match &request.action {
+                        Action::ScrollIntoView => {
+                            viewport.this_pass.scroll_target = [
+                                Some(ScrollTarget::new(
+                                    res.rect.x_range(),
+                                    Some(Align::Center),
+                                    ScrollAnimation::none(),
+                                )),
+                                Some(ScrollTarget::new(
+                                    res.rect.y_range(),
+                                    Some(Align::Center),
+                                    ScrollAnimation::none(),
+                                )),
+                            ];
+                        }
+                        Action::ScrollDown => {
+                            viewport.this_pass.scroll_delta.0 += DISTANCE * Vec2::UP;
+                        }
+                        Action::ScrollUp => {
+                            viewport.this_pass.scroll_delta.0 += DISTANCE * Vec2::DOWN;
+                        }
+                        Action::ScrollLeft => {
+                            viewport.this_pass.scroll_delta.0 += DISTANCE * Vec2::LEFT;
+                        }
+                        Action::ScrollRight => {
+                            viewport.this_pass.scroll_delta.0 += DISTANCE * Vec2::RIGHT;
+                        }
+                        _ => return false,
+                    }
+                    true
+                });
+        });
         res
     }
 
@@ -1529,9 +1588,18 @@ impl Context {
 
     /// Paint on top of _everything_ else (even on top of tooltips and popups).
     pub fn debug_painter(&self) -> Painter {
-        // MEMBRANE: no clipping for debug painter, important when layer is transformed
+        // MEMBRANE: no clipping for debug painter, important when layer is transformed. Also allow for layer override.
         let screen_rect = Rect::EVERYTHING;
-        Painter::new(self.clone(), LayerId::debug(), screen_rect)
+        let layer = self.read(|ctx| ctx.debug_layer.unwrap_or(LayerId::debug()));
+        Painter::new(self.clone(), layer, screen_rect)
+    }
+
+    /// MEMBRANE: can be used to override the layer used for the debug painter. Useful for the
+    /// dashboard since we want debug painting to be affected by its transform.
+    pub fn set_debug_layer(&self, layer_id: Option<LayerId>) {
+        self.write(|ctx| {
+            ctx.debug_layer = layer_id;
+        });
     }
 
     /// Print this text next to the cursor at the end of the pass.
