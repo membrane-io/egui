@@ -433,7 +433,6 @@ pub mod widget_text;
 pub mod widgets;
 
 #[cfg(feature = "callstack")]
-#[cfg(debug_assertions)]
 mod callstack;
 pub mod class;
 

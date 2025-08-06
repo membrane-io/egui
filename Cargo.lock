@@ -1301,6 +1301,7 @@ dependencies = [
  "emath",
  "epaint",
  "itertools 0.15.0",
+ "js-sys",
  "log",
  "nohash-hasher",
  "profiling",
@@ -1308,6 +1309,7 @@ dependencies = [
  "serde",
  "smallvec",
  "unicode-segmentation",
+ "wasm-bindgen",
  "web-sys",
 ]
 
