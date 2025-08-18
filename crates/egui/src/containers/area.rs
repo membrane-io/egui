@@ -113,6 +113,7 @@ pub struct Area {
     enabled: bool,
     constrain: bool,
     constrain_rect: Option<Rect>,
+    clip_rect: Option<Rect>,
     order: Order,
     default_pos: Option<Pos2>,
     default_size: Vec2,
@@ -142,6 +143,7 @@ impl Area {
             interactable: true,
             constrain: true,
             constrain_rect: None,
+            clip_rect: None,
             enabled: true,
             order: Order::Middle,
             default_pos: None,
@@ -332,6 +334,15 @@ impl Area {
         self
     }
 
+    /// Clip the area to the given rectangle.
+    ///
+    /// Default: `constrain_rect` which defaults to the screen rect.
+    #[inline]
+    pub fn clip_rect(mut self, clip_rect: Rect) -> Self {
+        self.clip_rect = Some(clip_rect);
+        self
+    }
+
     /// Where the "root" of the area is.
     ///
     /// For instance, if you set this to [`Align2::RIGHT_TOP`]
@@ -423,6 +434,7 @@ pub(crate) struct Prepared {
     enabled: bool,
     constrain: bool,
     constrain_rect: Rect,
+    clip_rect: Rect,
 
     // MEMBRANE: see `Prepared::end()`
     anchor: Option<(Align2, Vec2)>,
@@ -469,6 +481,7 @@ impl Area {
             anchor,
             constrain,
             constrain_rect,
+            clip_rect,
             fade_in,
             layout,
             sizing_pass: force_sizing_pass,
@@ -478,6 +491,7 @@ impl Area {
         } = self;
 
         let constrain_rect = constrain_rect.unwrap_or_else(|| ctx.content_rect());
+        let clip_rect = clip_rect.unwrap_or_else(|| constrain_rect);
 
         let layer_id = LayerId::new(order, id);
 
@@ -568,7 +582,7 @@ impl Area {
                     parent_id: id,
                     layer_id,
                     rect: state.rect(),
-                    interact_rect: state.rect().intersect(constrain_rect),
+                    interact_rect: state.rect().intersect(clip_rect),
                     sense,
                     enabled,
                     visible: !sizing_pass,
@@ -627,6 +641,7 @@ impl Area {
             enabled,
             constrain,
             constrain_rect,
+            clip_rect,
             sizing_pass,
             fade_in,
             layout,
@@ -685,7 +700,7 @@ impl Prepared {
         }
 
         let mut ui = Ui::new(ctx.clone(), self.layer_id.id, ui_builder);
-        ui.set_clip_rect(self.constrain_rect); // Don't paint outside our bounds
+        ui.set_clip_rect(self.clip_rect); // Don't paint outside our bounds
 
         if self.fade_in
             && let Some(last_became_visible_at) = self.state.last_became_visible_at
