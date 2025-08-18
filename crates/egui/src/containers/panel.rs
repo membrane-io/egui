@@ -40,7 +40,7 @@ pub struct PanelState {
 
 impl PanelState {
     pub fn load(ctx: &Context, bar_id: Id) -> Option<Self> {
-        ctx.data_mut(|d| d.get_persisted(bar_id))
+        ctx.data_mut(|d| d.get_temp(bar_id))
     }
 
     /// The _outer_ size of the panel (from previous frame),
@@ -49,8 +49,8 @@ impl PanelState {
         self.outer_rect.size()
     }
 
-    fn store(self, ctx: &Context, bar_id: Id) {
-        ctx.data_mut(|d| d.insert_persisted(bar_id, self));
+    pub fn store(self, ctx: &Context, bar_id: Id) {
+        ctx.data_mut(|d| d.insert_temp(bar_id, self));
     }
 }
 
