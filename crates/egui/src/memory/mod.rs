@@ -1336,24 +1336,48 @@ impl Areas {
         });
         wants_to_be_on_top.clear();
 
-        // For all layers with sublayers, put the sublayers directly after the parent layer:
-        // (it doesn't matter in which order we replace parents with their children)
-        #[expect(clippy::iter_over_hash_type)]
-        for (parent, children) in std::mem::take(sublayers) {
-            let mut moved_layers = vec![parent]; // parent first…
+        // MEMBRANE: stable topological sort of sublayers.
+        // This adds support for sublayer parents who are also sublayers and fixes a flickering
+        // issue in the dashboard where stack blocks are sublayers of the backdrop but the pick
+        // overlays are sublayers of the block.
+        // Based on: https://blog.gapotchenko.com/stable-topological-sort. but instead of moving the
+        // parent back, it moves the children forward so if the parent was moved to the top, it
+        // stays on top (except for its sublayers).
+        let parents = std::mem::take(sublayers)
+            .into_iter()
+            .flat_map(|(parent, children)| children.into_iter().map(move |child| (child, parent)))
+            .collect::<HashMap<_, _>>();
 
-            order.retain(|l| {
-                if children.contains(l) {
-                    moved_layers.push(*l); // …followed by children
-                    false
-                } else {
-                    true
+        fn is_ancestor(
+            parents: &HashMap<LayerId, LayerId>,
+            child: LayerId,
+            ancestor: LayerId,
+        ) -> bool {
+            let mut current = child;
+            while let Some(parent) = parents.get(&current) {
+                if parent == &ancestor {
+                    return true;
                 }
-            });
-            let Some(parent_pos) = order.iter().position(|l| l == &parent) else {
-                continue;
-            };
-            order.splice(parent_pos..=parent_pos, moved_layers); // replace the parent with itself and its children
+                current = *parent;
+            }
+            false
+        }
+
+        'outer: loop {
+            for i in 0..order.len() {
+                for j in 0..i {
+                    if parents.get(&order[j]) == Some(&order[i]) {
+                        let circular = is_ancestor(&parents, order[i], order[j])
+                            && is_ancestor(&parents, order[j], order[i]);
+                        if !circular {
+                            let child = order.remove(j);
+                            order.insert(i + 1, child);
+                            continue 'outer;
+                        }
+                    }
+                }
+            }
+            break;
         }
 
         self.order_map = self
