@@ -109,19 +109,19 @@ pub fn capture() -> String {
         }
 
         // Remove stuff that isn't user calls:
-        let skip_prefixes = [
+        let skip_prefixes: &[&str] = &[
             // "backtrace::", // not needed, since we cut at egui::callstack::capture
-            "egui::",
-            "<egui::",
-            "<F as egui::widgets::Widget>",
-            "egui_plot::",
-            "egui_extras::",
-            "core::ptr::drop_in_place<egui::ui::Ui>",
-            "eframe::",
-            "core::ops::function::FnOnce::call_once",
-            "<alloc::boxed::Box<F,A> as core::ops::function::FnOnce<Args>>::call_once",
-            "<egui::ui::Ui as core::ops::drop::Drop>::drop",
-            "egui::ui::register_rect",
+            // "egui::",
+            // "<egui::",
+            // "<F as egui::widgets::Widget>",
+            // "egui_plot::",
+            // "egui_extras::",
+            // "core::ptr::drop_in_place<egui::ui::Ui>",
+            // "eframe::",
+            // "core::ops::function::FnOnce::call_once",
+            // "<alloc::boxed::Box<F,A> as core::ops::function::FnOnce<Args>>::call_once",
+            // "<egui::ui::Ui as core::ops::drop::Drop>::drop",
+            // "egui::ui::register_rect",
         ];
         for prefix in skip_prefixes {
             if frame.name.starts_with(prefix) {
