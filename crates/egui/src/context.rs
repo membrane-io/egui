@@ -2242,6 +2242,21 @@ impl Context {
             }
         };
 
+        if self.style().debug.show_focusable_widgets {
+            // Show all interactive widgets:
+            let rects = self.write(|ctx| ctx.viewport().this_pass.widgets.clone());
+            for (layer_id, rects) in rects.layers() {
+                let painter = Painter::new(self.clone(), *layer_id, Rect::EVERYTHING);
+                for rect in rects {
+                    if rect.sense.is_focusable() {
+                        let color = Color32::from_rgb(0x88, 0x44, 0x00);
+                        let text = format!("{:?}", rect.id);
+                        painter.debug_rect(rect.interact_rect, color, text);
+                    }
+                }
+            }
+        }
+
         if self.style().debug.show_interactive_widgets {
             // Show all interactive widgets:
             let rects = self.write(|ctx| ctx.viewport().this_pass.widgets.clone());
