@@ -487,7 +487,7 @@ pub(crate) struct InteractionState {
 
 /// Keeps tracks of what widget has keyboard focus
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Focus {
+pub struct Focus {
     /// The widget with keyboard focus (i.e. a text input field).
     focused_widget: Option<FocusWidget>,
 
@@ -508,7 +508,7 @@ pub(crate) struct Focus {
 
     /// If set, the next widget that is interested in focus will automatically get it.
     /// Probably because the user pressed Tab.
-    give_to_next: bool,
+    pub give_to_next: bool,
 
     /// The last widget interested in focus.
     last_interested: Option<Id>,
@@ -908,6 +908,14 @@ impl Memory {
         self.interrupt_ime();
     }
 
+    /// Give keyboard focus to a specific widget at the end of the current frame. This makes
+    /// `gained_focus` work reliably with the caveat that it will have a frame delay.
+    /// See also [`crate::Response::request_focus`].
+    #[inline(always)]
+    pub fn request_focus_next_frame(&mut self, id: Id) {
+        self.focus_mut().id_next_frame = Some(id);
+    }
+
     /// Surrender keyboard focus for a specific widget.
     /// See also [`crate::Response::surrender_focus`].
     #[inline(always)]
@@ -1014,11 +1022,13 @@ impl Memory {
         self.interactions.entry(self.viewport_id).or_default()
     }
 
-    pub(crate) fn focus(&self) -> Option<&Focus> {
+    /// MEMBRANE: exposing this to allow `BlockView` to pass the focus to the first focusable element.
+    pub fn focus(&self) -> Option<&Focus> {
         self.focus.get(&self.viewport_id)
     }
 
-    pub(crate) fn focus_mut(&mut self) -> &mut Focus {
+    /// MEMBRANE: exposing this to allow `BlockView` to pass the focus to the first focusable element.
+    pub fn focus_mut(&mut self) -> &mut Focus {
         self.focus.entry(self.viewport_id).or_default()
     }
 
@@ -1403,7 +1413,7 @@ impl Areas {
                             && is_ancestor(&parents, order[j], order[i]);
                         if !circular {
                             let child = order.remove(j);
-                            order.insert(i + 1, child);
+                            order.insert((i + 1).min(order.len()), child);
                             continue 'outer;
                         }
                     }
