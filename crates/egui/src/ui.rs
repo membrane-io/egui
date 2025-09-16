@@ -546,6 +546,12 @@ impl Ui {
         }
     }
 
+    /// MEMBRANE: exposing this to allow removing the fade-out of disabled UIs.
+    /// If set, colors of this UI and its children will be tinted to this color.
+    pub fn set_fade_to_color(&mut self, color: Option<Color32>) {
+        self.painter.set_fade_to_color(color);
+    }
+
     /// Calling `set_enabled(false)` will cause the [`Ui`] to deny all future interaction
     /// and all the widgets will draw with a gray look.
     ///
