@@ -1332,6 +1332,9 @@ pub struct DebugOptions {
     /// Show an overlay on all interactive widgets.
     pub show_interactive_widgets: bool,
 
+    /// Show an overlay on all focusable widgets.
+    pub show_focusable_widgets: bool,
+
     /// Show interesting widgets under the mouse cursor.
     pub show_widget_hits: bool,
 
@@ -1364,6 +1367,7 @@ impl Default for DebugOptions {
             show_expand_height: false,
             show_resize: false,
             show_interactive_widgets: false,
+            show_focusable_widgets: false,
             show_widget_hits: false,
             warn_if_rect_changes_id: cfg!(debug_assertions),
             show_unaligned: cfg!(debug_assertions),
@@ -2527,6 +2531,7 @@ impl DebugOptions {
             show_expand_height,
             show_resize,
             show_interactive_widgets,
+            show_focusable_widgets,
             show_widget_hits,
             warn_if_rect_changes_id,
             show_unaligned,
@@ -2556,6 +2561,11 @@ impl DebugOptions {
         ui.checkbox(
             show_interactive_widgets,
             "Show an overlay on all interactive widgets",
+        );
+
+        ui.checkbox(
+            show_focusable_widgets,
+            "Show an overlay on all focusable widgets",
         );
 
         ui.checkbox(show_widget_hits, "Show widgets under mouse pointer");
