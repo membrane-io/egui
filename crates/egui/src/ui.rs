@@ -501,6 +501,12 @@ impl Ui {
         }
     }
 
+    /// MEMBRANE: exposing this to allow removing the fade-out of disabled UIs.
+    /// If set, colors of this UI and its children will be tinted to this color.
+    pub fn set_fade_to_color(&mut self, color: Option<Color32>) {
+        self.painter.set_fade_to_color(color);
+    }
+
     /// If `false`, any widgets added to the [`Ui`] will be invisible and non-interactive.
     ///
     /// This is `false` if any parent had [`UiBuilder::invisible`]

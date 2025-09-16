@@ -82,6 +82,12 @@ impl Painter {
         self.layer_id = layer_id;
     }
 
+    /// MEMBRANE: If set, colors of everything painted by this painter will be tinted towards this color.
+    /// Used to control (e.g. remove) the fade-out of disabled UIs.
+    pub fn set_fade_to_color(&mut self, fade_to_color: Option<Color32>) {
+        self.fade_to_color = fade_to_color;
+    }
+
     /// Set the opacity (alpha multiplier) of everything painted by this painter from this point forward.
     ///
     /// `opacity` must be between 0.0 and 1.0, where 0.0 means fully transparent (i.e., invisible)
