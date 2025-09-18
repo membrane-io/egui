@@ -470,6 +470,7 @@ impl RichText {
                 color: text_color,
                 background: background_color,
                 coords,
+                bg_corner_radius: 0.0,
                 italics,
                 underline,
                 strikethrough,
