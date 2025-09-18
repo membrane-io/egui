@@ -287,6 +287,10 @@ pub struct TextFormat {
     /// Default: 1.0
     pub expand_bg: Vec2,
 
+    /// Corner radius for background rectangles.
+    /// Default: 0.0 (no rounding)
+    pub bg_corner_radius: f32,
+
     pub italics: bool,
 
     pub underline: Stroke,
@@ -315,6 +319,7 @@ impl Default for TextFormat {
             color: Color32::GRAY,
             background: Color32::TRANSPARENT,
             expand_bg: Vec2::new(1.0, 1.0),
+            bg_corner_radius: 0.0,
             italics: false,
             underline: Stroke::NONE,
             strikethrough: Stroke::NONE,
@@ -333,6 +338,7 @@ impl std::hash::Hash for TextFormat {
             color,
             background,
             expand_bg,
+            bg_corner_radius,
             italics,
             underline,
             strikethrough,
@@ -347,6 +353,7 @@ impl std::hash::Hash for TextFormat {
         background.hash(state);
         emath::OrderedFloat(expand_bg.x).hash(state);
         emath::OrderedFloat(expand_bg.y).hash(state);
+        emath::OrderedFloat(*bg_corner_radius).hash(state);
         italics.hash(state);
         underline.hash(state);
         strikethrough.hash(state);
