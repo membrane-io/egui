@@ -218,6 +218,89 @@ impl Mesh {
         });
     }
 
+    /// Rectangle with texture, color, and rounded corners.
+    pub fn add_rect_with_uv_and_corners(
+        &mut self,
+        rect: Rect,
+        uv: Rect,
+        corner_radius: f32,
+        color: Color32,
+    ) {
+        if corner_radius <= 0.0 {
+            // Fall back to regular rectangle
+            self.add_rect_with_uv(rect, uv, color);
+            return;
+        }
+
+        let radius = corner_radius
+            .min(rect.width() * 0.5)
+            .min(rect.height() * 0.5);
+        let segments_per_corner = ((radius * 0.5) as usize).max(4).min(16); // Adaptive quality
+
+        // Create center vertex for triangle fan
+        let center_idx = self.vertices.len() as u32;
+        self.vertices.push(Vertex {
+            pos: rect.center(),
+            uv: uv.center(),
+            color,
+        });
+
+        let mut vertices = Vec::new();
+
+        // Generate vertices for each corner arc
+        for corner in 0..4 {
+            let (corner_center, start_angle) = match corner {
+                0 => (
+                    rect.left_top() + Vec2::new(radius, radius),
+                    std::f32::consts::PI,
+                ),
+                1 => (
+                    rect.right_top() + Vec2::new(-radius, radius),
+                    -std::f32::consts::PI / 2.0,
+                ),
+                2 => (rect.right_bottom() + Vec2::new(-radius, -radius), 0.0), // Bottom-right
+                3 => (
+                    rect.left_bottom() + Vec2::new(radius, -radius),
+                    std::f32::consts::PI / 2.0,
+                ),
+                _ => unreachable!(),
+            };
+
+            for i in 0..=segments_per_corner {
+                let angle = start_angle
+                    + (i as f32 / segments_per_corner as f32) * std::f32::consts::PI / 2.0;
+                let pos = corner_center + Vec2::new(angle.cos(), angle.sin()) * radius;
+
+                // Calculate UV coordinate proportionally
+                let uv_pos = Pos2::new(
+                    uv.min.x + (pos.x - rect.min.x) / rect.width() * uv.width(),
+                    uv.min.y + (pos.y - rect.min.y) / rect.height() * uv.height(),
+                );
+
+                vertices.push(Vertex {
+                    pos,
+                    uv: uv_pos,
+                    color,
+                });
+            }
+        }
+
+        // Add all arc vertices to mesh
+        let first_arc_idx = self.vertices.len() as u32;
+        self.vertices.extend(vertices);
+
+        // Create triangles connecting center to arc vertices
+        let total_arc_vertices = (segments_per_corner + 1) * 4;
+        for i in 0..total_arc_vertices {
+            let next = if i + 1 < total_arc_vertices { i + 1 } else { 0 };
+            self.add_triangle(
+                center_idx,
+                first_arc_idx + i as u32,
+                first_arc_idx + next as u32,
+            );
+        }
+    }
+
     /// Uniformly colored rectangle.
     #[inline(always)]
     pub fn add_colored_rect(&mut self, rect: Rect, color: Color32) {
@@ -226,6 +309,21 @@ impl Mesh {
             "Mesh has an assigned texture"
         );
         self.add_rect_with_uv(rect, [WHITE_UV, WHITE_UV].into(), color);
+    }
+
+    /// Uniformly colored rectangle with rounded corners.
+    #[inline(always)]
+    pub fn add_colored_rect_with_corners(
+        &mut self,
+        rect: Rect,
+        corner_radius: f32,
+        color: Color32,
+    ) {
+        debug_assert!(
+            self.texture_id == TextureId::default(),
+            "Mesh has an assigned texture"
+        );
+        self.add_rect_with_uv_and_corners(rect, [WHITE_UV, WHITE_UV].into(), corner_radius, color);
     }
 
     /// This is for platforms that only support 16-bit index buffers.
