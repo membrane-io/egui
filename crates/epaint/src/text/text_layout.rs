@@ -767,7 +767,7 @@ fn add_row_backgrounds(point_scale: PointScale, job: &LayoutJob, row: &Row, mesh
         return;
     }
 
-    let mut end_run = |start: Option<(Color32, Rect, Vec2, f32)>, stop_x: f32| {
+    let mut end_run = |start: Option<(Color32, Rect, Vec2, u8)>, stop_x: f32| {
         if let Some((color, start_rect, expand, corner_radius)) = start {
             let rect = Rect::from_min_max(start_rect.left_top(), pos2(stop_x, start_rect.bottom()));
             let rect = rect.expand2(expand);

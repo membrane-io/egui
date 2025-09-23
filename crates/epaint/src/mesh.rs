@@ -223,16 +223,17 @@ impl Mesh {
         &mut self,
         rect: Rect,
         uv: Rect,
-        corner_radius: f32,
+        corner_radius: u8,
         color: Color32,
     ) {
-        if corner_radius <= 0.0 {
+        if corner_radius == 0 {
+            // Changed: compare u8 with 0, not 0.0
             // Fall back to regular rectangle
             self.add_rect_with_uv(rect, uv, color);
             return;
         }
 
-        let radius = corner_radius
+        let radius = (corner_radius as f32) // Changed: convert u8 to f32 first
             .min(rect.width() * 0.5)
             .min(rect.height() * 0.5);
         let segments_per_corner = ((radius * 0.5) as usize).max(4).min(16); // Adaptive quality
@@ -313,12 +314,7 @@ impl Mesh {
 
     /// Uniformly colored rectangle with rounded corners.
     #[inline(always)]
-    pub fn add_colored_rect_with_corners(
-        &mut self,
-        rect: Rect,
-        corner_radius: f32,
-        color: Color32,
-    ) {
+    pub fn add_colored_rect_with_corners(&mut self, rect: Rect, corner_radius: u8, color: Color32) {
         debug_assert!(
             self.texture_id == TextureId::default(),
             "Mesh has an assigned texture"

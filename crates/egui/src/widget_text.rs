@@ -451,7 +451,7 @@ impl RichText {
                 line_height,
                 color: text_color,
                 background: background_color,
-                bg_corner_radius: 0.0,
+                bg_corner_radius: 0,
                 italics,
                 underline,
                 strikethrough,
