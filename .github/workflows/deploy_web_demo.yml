@@ -56,7 +56,7 @@ jobs:
 
       - run: |
           scripts/build_demo_web.sh -g
-          ls -lahG web_demo
+          rm web_demo/.gitignore
 
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
