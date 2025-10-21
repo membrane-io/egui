@@ -188,19 +188,23 @@ impl WrapApp {
             .add_plugin(crate::accessibility_inspector::AccessibilityInspectorPlugin::default());
 
         cc.egui_ctx.add_plugin(egui_dev_tools::WidgetInspect::new(
-            // This will open the file in github. To open the file locally, use a url like:
-            //   vscode://file/{path}:{line}:{column}
-            // Works with many editors, like vscode, cursor, zed.
             egui_dev_tools::Config::new(Some(Box::new(|ctx, location| {
-                let relative = location
-                    .path
-                    .find("/crates/")
-                    .map(|index| &location.path[index..])
-                    .unwrap_or(&location.path);
-                ctx.open_url(egui::OpenUrl::new_tab(format!(
-                    "https://github.com/emilk/egui/blob/main{}#L{}",
-                    relative, location.line
+                #[cfg(target_arch = "wasm32")]
+                ctx.open_url(egui::OpenUrl::same_tab(format!(
+                    "cursor://file{}:{}:{}",
+                    location.path, location.line, location.column
                 )));
+
+                // Works with many editors, like vscode, cursor, zed.
+                #[cfg(not(target_arch = "wasm32"))]
+                std::process::Command::new("cursor")
+                    .arg("--goto")
+                    .arg(format!(
+                        "{}:{}:{}",
+                        location.path, location.line, location.column
+                    ))
+                    .spawn()
+                    .map_err(|e| e.to_string())?;
                 Ok(())
             }))),
         ));
