@@ -1369,6 +1369,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_demo_lib",
+ "egui_dev_tools",
  "egui_extras",
  "egui_kittest",
  "ehttp",
@@ -1403,6 +1404,17 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "unicode_names2",
+]
+
+[[package]]
+name = "egui_dev_tools"
+version = "0.1.0"
+dependencies = [
+ "backtrace",
+ "egui",
+ "js-sys",
+ "log",
+ "wasm-bindgen",
 ]
 
 [[package]]

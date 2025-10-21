@@ -53,6 +53,7 @@ image = { workspace = true, default-features = false, features = [
 ] }
 log.workspace = true
 profiling.workspace = true
+egui_dev_tools = { path = "../../../egui_dev_tools" }
 
 # Optional dependencies:
 accesskit = { workspace = true, optional = true }

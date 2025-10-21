@@ -40,6 +40,7 @@ panic = "abort" # This leads to better optimizations and smaller binaries (and i
 
 
 [profile.dev]
+debug = 1
 # Can't leave this on by default, because it breaks the Windows build. Related: https://github.com/rust-lang/cargo/issues/4897
 # split-debuginfo = "unpacked" # faster debug builds on mac
 # opt-level = 1                # Make debug builds run faster
@@ -52,6 +53,7 @@ panic = "abort" # This leads to better optimizations and smaller binaries (and i
 [profile.dev.package."*"]
 # Optimize all dependencies even in debug builds (does not affect workspace packages):
 opt-level = 2
+debug = 0
 
 
 [workspace.dependencies]
