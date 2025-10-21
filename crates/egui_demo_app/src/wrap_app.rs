@@ -195,7 +195,7 @@ impl WrapApp {
                     location.path, location.line, location.column
                 )));
 
-                // Works with many editors, like vscode, cursor, zed.
+                // Works with many editors, like vscode, cursor, zed
                 #[cfg(not(target_arch = "wasm32"))]
                 std::process::Command::new("cursor")
                     .arg("--goto")
