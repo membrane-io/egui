@@ -53,7 +53,7 @@ jobs:
           name: wasm-opt
 
       - run: |
-          scripts/build_demo_web.sh --release
+          scripts/build_demo_web.sh -g
 
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
