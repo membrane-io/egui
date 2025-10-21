@@ -28,10 +28,19 @@ default = ["glow", "persistence"]
 # image_viewer adds about 0.9 MB of WASM
 web_app = ["http", "persistence"]
 
-accessibility_inspector = ["dep:accesskit", "dep:accesskit_consumer", "eframe/accesskit"]
+accessibility_inspector = [
+  "dep:accesskit",
+  "dep:accesskit_consumer",
+  "eframe/accesskit",
+]
 http = ["ehttp", "image/jpeg", "poll-promise", "egui_extras/image"]
 image_viewer = ["image/jpeg", "egui_extras/all_loaders", "rfd"]
-persistence = ["eframe/persistence", "egui_extras/serde", "egui/persistence", "serde"]
+persistence = [
+  "eframe/persistence",
+  "egui_extras/serde",
+  "egui/persistence",
+  "serde",
+]
 puffin = ["dep:puffin", "dep:puffin_http", "profiling/profile-with-puffin"]
 serde = ["dep:serde", "egui_demo_lib/serde", "egui/serde"]
 syntect = ["egui_demo_lib/syntect"]
@@ -43,7 +52,9 @@ x11 = ["eframe/x11"]
 
 [dependencies]
 chrono = { workspace = true, features = ["js-sys", "wasmbind"] }
-eframe = { workspace = true, default-features = false, features = ["web_screen_reader"] }
+eframe = { workspace = true, default-features = false, features = [
+  "web_screen_reader",
+] }
 egui = { workspace = true, features = ["callstack", "default"] }
 egui_demo_lib = { workspace = true, features = ["default", "chrono"] }
 egui_extras = { workspace = true, features = ["default", "image"] }
@@ -53,7 +64,7 @@ image = { workspace = true, default-features = false, features = [
 ] }
 log.workspace = true
 profiling.workspace = true
-egui_dev_tools = { path = "../../../egui_dev_tools" }
+egui_dev_tools = { path = "../../egui_dev_tools" }
 
 # Optional dependencies:
 accesskit = { workspace = true, optional = true }
@@ -63,7 +74,11 @@ puffin = { workspace = true, optional = true }
 puffin_http = { workspace = true, optional = true }
 # Enable both WebGL & WebGPU when targeting the web (these features have no effect when not targeting wasm32)
 # Also enable the default features so we have a supported backend for every platform.
-wgpu = { workspace = true, features = ["default", "webgpu", "webgl"], optional = true }
+wgpu = { workspace = true, features = [
+  "default",
+  "webgpu",
+  "webgl",
+], optional = true }
 
 
 # feature "http":
