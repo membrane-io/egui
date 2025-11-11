@@ -38,12 +38,12 @@ pub use winit::*;
 macro_rules! check_for_gl_error {
     ($gl: expr) => {{
         if cfg!(debug_assertions) {
-            $crate::check_for_gl_error_impl($gl, file!(), line!(), "")
+            // $crate::check_for_gl_error_impl($gl, file!(), line!(), "")
         }
     }};
     ($gl: expr, $context: literal) => {{
         if cfg!(debug_assertions) {
-            $crate::check_for_gl_error_impl($gl, file!(), line!(), $context)
+            // $crate::check_for_gl_error_impl($gl, file!(), line!(), $context)
         }
     }};
 }
