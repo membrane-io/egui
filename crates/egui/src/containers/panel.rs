@@ -665,6 +665,7 @@ impl Panel {
                 .id_salt(id)
                 .ui_stack_info(UiStackInfo::new(side.ui_kind()))
                 .max_rect(panel_sizer.panel_rect)
+                .layer_id(ui.layer_id())
                 .layout(Layout::top_down(Align::Min)),
         );
         panel_ui.expand_to_include_rect(panel_sizer.panel_rect);
