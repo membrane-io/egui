@@ -21,7 +21,7 @@ impl WebHandle {
         } else {
             log::LevelFilter::Debug
         };
-        eframe::WebLogger::init(log_level).ok();
+        eframe::WebLogger::init(log_level, "egui_demo_app".to_string()).ok();
 
         Self {
             runner: eframe::WebRunner::new(),
