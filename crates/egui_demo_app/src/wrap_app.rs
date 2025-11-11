@@ -179,7 +179,7 @@ pub struct WrapApp {
     #[cfg(any(feature = "glow", feature = "wgpu"))]
     custom3d: Option<crate::apps::Custom3d>,
 
-    dropped_files: Vec<egui::DroppedFile>,
+    dropped_items: Vec<egui::DroppedFile>,
 }
 
 impl WrapApp {
@@ -198,7 +198,7 @@ impl WrapApp {
             #[cfg(any(feature = "glow", feature = "wgpu"))]
             custom3d: crate::apps::Custom3d::new(cc),
 
-            dropped_files: Default::default(),
+            dropped_items: Default::default(),
         };
 
         #[cfg(feature = "persistence")]
@@ -464,18 +464,18 @@ impl WrapApp {
         use std::fmt::Write as _;
 
         // Preview hovering files:
-        if !ctx.input(|i| i.raw.hovered_files.is_empty()) {
+        if !ctx.input(|i| i.raw.hovered_items.is_empty()) {
             let text = ctx.input(|i| {
-                let mut text = "Dropping files:\n".to_owned();
-                for file in &i.raw.hovered_files {
-                    if let Some(path) = &file.path {
-                        write!(text, "\n{}", path.display()).ok();
-                    } else if file.mime.is_empty() {
-                        text += "\n???";
-                    } else {
-                        write!(text, "\n{}", file.mime).ok();
-                    }
-                }
+                let mut text = "Dropping items:\n".to_owned();
+                // for item in &i.raw.hovered_items {
+                //     if let Some(path) = &file.path {
+                //         write!(text, "\n{}", path.display()).ok();
+                //     } else if !file.mime.is_empty() {
+                //         write!(text, "\n{}", file.mime).ok();
+                //     } else {
+                //         text += "\n???";
+                //     }
+                // }
                 text
             });
 
@@ -495,18 +495,19 @@ impl WrapApp {
 
         // Collect dropped files:
         ctx.input(|i| {
-            if !i.raw.dropped_files.is_empty() {
-                self.dropped_files.clone_from(&i.raw.dropped_files);
+            if !i.raw.dropped_items.is_empty() {
+                // MEMBRANE: ignored
+                // self.dropped_items.clone_from(&i.raw.dropped_items);
             }
         });
 
         // Show dropped files (if any):
-        if !self.dropped_files.is_empty() {
+        if !self.dropped_items.is_empty() {
             let mut open = true;
             egui::Window::new("Dropped files")
                 .open(&mut open)
                 .show(ctx, |ui| {
-                    for file in &self.dropped_files {
+                    for file in &self.dropped_items {
                         let mut info = if let Some(path) = &file.path {
                             path.display().to_string()
                         } else if file.name.is_empty() {
@@ -531,7 +532,7 @@ impl WrapApp {
                     }
                 });
             if !open {
-                self.dropped_files.clear();
+                self.dropped_items.clear();
             }
         }
     }
