@@ -126,7 +126,7 @@ impl LayoutJob {
     pub fn simple(text: String, font_id: FontId, color: Color32, wrap_width: f32) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0,
+                leading_space: 0.0.into(),
                 byte_range: ByteRange::full(&text),
                 format: TextFormat::simple(font_id, color),
             }],
@@ -145,7 +145,7 @@ impl LayoutJob {
     pub fn simple_format(text: String, format: TextFormat) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0,
+                leading_space: 0.0.into(),
                 byte_range: ByteRange::full(&text),
                 format,
             }],
@@ -160,7 +160,7 @@ impl LayoutJob {
     pub fn simple_singleline(text: String, font_id: FontId, color: Color32) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0,
+                leading_space: 0.0.into(),
                 byte_range: ByteRange::full(&text),
                 format: TextFormat::simple(font_id, color),
             }],
@@ -175,7 +175,7 @@ impl LayoutJob {
     pub fn single_section(text: String, format: TextFormat) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0,
+                leading_space: 0.0.into(),
                 byte_range: ByteRange::full(&text),
                 format,
             }],
@@ -197,6 +197,8 @@ impl LayoutJob {
     /// `leading_space`, it is merged into that section instead of adding a new one.
     /// This keeps the section count down and lets text shaping (e.g. kerning) work
     /// across the appended text, since shaping is done per [`LayoutSection`].
+    // TODO(juan): Deprecate this in favor of push
+    // #[deprecated(note = "Use push or push_with_leading_space instead")]
     pub fn append(&mut self, text: &str, leading_space: f32, format: TextFormat) {
         let start = self.text.len();
         self.text += text;
@@ -212,6 +214,28 @@ impl LayoutJob {
             return;
         }
 
+        self.sections.push(LayoutSection {
+            leading_space: leading_space.into(),
+            byte_range,
+            format,
+        });
+    }
+
+    /// Helper for adding a new section when building a [`LayoutJob`].
+    pub fn push(&mut self, text: &str, format: TextFormat) {
+        self.append(text, 0.0, format);
+    }
+
+    /// Helper for adding a new section when building a [`LayoutJob`].
+    pub fn push_with_leading_space(
+        &mut self,
+        text: &str,
+        leading_space: LeadingSpace,
+        format: TextFormat,
+    ) {
+        let start = self.text.len();
+        self.text += text;
+        let byte_range = ByteIndex(start)..ByteIndex(self.text.len());
         self.sections.push(LayoutSection {
             leading_space,
             byte_range,
@@ -333,6 +357,47 @@ impl core::hash::Hash for LayoutJob {
 
 // ----------------------------------------------------------------------------
 
+/// Specifies how leading space is applied to a section.
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum LeadingSpace {
+    /// Only the first row of this section will have this leading space.
+    FirstRow(f32),
+    /// All wrapped rows of this section will be indented by this amount.
+    Indent(f32),
+}
+
+impl LeadingSpace {
+    pub fn value(&self) -> f32 {
+        match self {
+            LeadingSpace::FirstRow(value) => *value,
+            LeadingSpace::Indent(value) => *value,
+        }
+    }
+}
+
+impl core::hash::Hash for LeadingSpace {
+    #[inline]
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            LeadingSpace::FirstRow(value) => {
+                0u8.hash(state);
+                OrderedFloat(*value).hash(state);
+            }
+            LeadingSpace::Indent(value) => {
+                1u8.hash(state);
+                OrderedFloat(*value).hash(state);
+            }
+        }
+    }
+}
+
+impl From<f32> for LeadingSpace {
+    fn from(value: f32) -> Self {
+        LeadingSpace::FirstRow(value)
+    }
+}
+
 /// A contiguous range of [`LayoutJob::text`] that shares the same [`TextFormat`].
 ///
 /// The sections of a [`LayoutJob`] are ordered and together cover the whole text
@@ -342,31 +407,17 @@ impl core::hash::Hash for LayoutJob {
 /// This means kerning (and ligatures) are only correct _within_ a single section,
 /// and not across the boundary between two adjacent sections.
 /// For this reason [`LayoutJob::append`] merges consecutive sections when possible.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct LayoutSection {
     /// Can be used for first row indentation.
-    pub leading_space: f32,
+    pub leading_space: LeadingSpace,
 
     /// Range into [`LayoutJob::text`].
     pub byte_range: ByteRange,
 
     /// How to format the text in this section (font, color, etc).
     pub format: TextFormat,
-}
-
-impl core::hash::Hash for LayoutSection {
-    #[inline]
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        let Self {
-            leading_space,
-            byte_range,
-            format,
-        } = self;
-        OrderedFloat(*leading_space).hash(state);
-        byte_range.hash(state);
-        format.hash(state);
-    }
 }
 
 // ----------------------------------------------------------------------------

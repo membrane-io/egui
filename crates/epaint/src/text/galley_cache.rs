@@ -212,7 +212,7 @@ impl GalleyCache {
                         leading_space: if ByteIndex(start) <= section_range.start {
                             *leading_space
                         } else {
-                            0.0
+                            0.0.into()
                         },
                         byte_range: new_range,
                         format: format.clone(),
