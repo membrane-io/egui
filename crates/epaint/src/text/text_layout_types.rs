@@ -101,7 +101,7 @@ impl LayoutJob {
     pub fn simple(text: String, font_id: FontId, color: Color32, wrap_width: f32) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0,
+                leading_space: 0.0.into(),
                 byte_range: 0..text.len(),
                 format: TextFormat::simple(font_id, color),
             }],
@@ -120,7 +120,7 @@ impl LayoutJob {
     pub fn simple_format(text: String, format: TextFormat) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0,
+                leading_space: 0.0.into(),
                 byte_range: 0..text.len(),
                 format,
             }],
@@ -135,7 +135,7 @@ impl LayoutJob {
     pub fn simple_singleline(text: String, font_id: FontId, color: Color32) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0,
+                leading_space: 0.0.into(),
                 byte_range: 0..text.len(),
                 format: TextFormat::simple(font_id, color),
             }],
@@ -150,7 +150,7 @@ impl LayoutJob {
     pub fn single_section(text: String, format: TextFormat) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0,
+                leading_space: 0.0.into(),
                 byte_range: 0..text.len(),
                 format,
             }],
@@ -167,7 +167,38 @@ impl LayoutJob {
     }
 
     /// Helper for adding a new section when building a [`LayoutJob`].
+    // TODO(juan): Deprecate this in favor of push
+    // #[deprecated(note = "Use push or push_with_leading_space instead")]
     pub fn append(&mut self, text: &str, leading_space: f32, format: TextFormat) {
+        let start = self.text.len();
+        self.text += text;
+        let byte_range = start..self.text.len();
+        self.sections.push(LayoutSection {
+            leading_space: leading_space.into(),
+            byte_range,
+            format,
+        });
+    }
+
+    /// Helper for adding a new section when building a [`LayoutJob`].
+    pub fn push(&mut self, text: &str, format: TextFormat) {
+        let start = self.text.len();
+        self.text += text;
+        let byte_range = start..self.text.len();
+        self.sections.push(LayoutSection {
+            leading_space: 0.0.into(),
+            byte_range,
+            format,
+        });
+    }
+
+    /// Helper for adding a new section when building a [`LayoutJob`].
+    pub fn push_with_leading_space(
+        &mut self,
+        text: &str,
+        leading_space: LeadingSpace,
+        format: TextFormat,
+    ) {
         let start = self.text.len();
         self.text += text;
         let byte_range = start..self.text.len();
@@ -229,30 +260,57 @@ impl std::hash::Hash for LayoutJob {
 
 // ----------------------------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
+/// Specifies how leading space is applied to a section.
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum LeadingSpace {
+    /// Only the first row of this section will have this leading space.
+    FirstRow(f32),
+    /// All wrapped rows of this section will be indented by this amount.
+    Indent(f32),
+}
+
+impl LeadingSpace {
+    pub fn value(&self) -> f32 {
+        match self {
+            LeadingSpace::FirstRow(value) => *value,
+            LeadingSpace::Indent(value) => *value,
+        }
+    }
+}
+
+impl std::hash::Hash for LeadingSpace {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            LeadingSpace::FirstRow(value) => {
+                0u8.hash(state);
+                OrderedFloat(*value).hash(state);
+            }
+            LeadingSpace::Indent(value) => {
+                1u8.hash(state);
+                OrderedFloat(*value).hash(state);
+            }
+        }
+    }
+}
+
+impl From<f32> for LeadingSpace {
+    fn from(value: f32) -> Self {
+        LeadingSpace::FirstRow(value)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct LayoutSection {
     /// Can be used for first row indentation.
-    pub leading_space: f32,
+    pub leading_space: LeadingSpace,
 
     /// Range into the galley text
     pub byte_range: Range<usize>,
 
     pub format: TextFormat,
-}
-
-impl std::hash::Hash for LayoutSection {
-    #[inline]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let Self {
-            leading_space,
-            byte_range,
-            format,
-        } = self;
-        OrderedFloat(*leading_space).hash(state);
-        byte_range.hash(state);
-        format.hash(state);
-    }
 }
 
 // ----------------------------------------------------------------------------
