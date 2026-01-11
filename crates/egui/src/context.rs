@@ -2645,10 +2645,6 @@ impl Context {
             paint_widget_id(focused_id, "focused", Color32::PURPLE);
         }
 
-        if let Some(debug_rect) = self.pass_state_mut(|fs| fs.debug_rect.take()) {
-            debug_rect.paint(&self.debug_painter());
-        }
-
         let num_multipass_in_row = self.viewport(|vp| vp.num_multipass_in_row);
         if 3 <= num_multipass_in_row {
             // If you see this message, it means we've been paying the cost of multi-pass for multiple frames in a row.
