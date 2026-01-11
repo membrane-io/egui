@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use crate::{
     Align, Direction, FontSelection, Galley, Pos2, Response, Sense, Stroke, TextWrapMode, Ui,
-    Widget, WidgetInfo, WidgetText, WidgetType, epaint, pos2, text_selection::LabelSelectionState,
+    Widget, WidgetInfo, WidgetText, WidgetType, epaint, epaint::text::LeadingSpace, pos2,
+    text_selection::LabelSelectionState,
 };
 
 /// Static text.
@@ -209,7 +210,7 @@ impl Label {
             layout_job.halign = Align::Min;
             layout_job.justify = false;
             if let Some(first_section) = layout_job.sections.first_mut() {
-                first_section.leading_space = first_row_indentation;
+                first_section.leading_space = LeadingSpace::FirstRow(first_row_indentation);
             }
             let galley = ui.fonts_mut(|fonts| fonts.layout_job(layout_job));
 

@@ -80,6 +80,11 @@ struct Paragraph {
 
     /// In case of an empty paragraph ("\n"), use this as height.
     pub empty_paragraph_height: f32,
+
+    /// Indentation of the paragraph. This is only relevant if the paragraph has line breaks (i.e.
+    /// not enough horizontal space). If the first line also needs to be indented (usually the
+    /// case), add whitespace or leading space before it.
+    pub indentation: f32,
 }
 
 impl Paragraph {
@@ -89,6 +94,7 @@ impl Paragraph {
             section_index_at_start,
             glyphs: vec![],
             empty_paragraph_height: 0.0,
+            indentation: 0.0,
         }
     }
 }
@@ -450,7 +456,14 @@ fn layout_section(
     if paragraph.glyphs.is_empty() {
         paragraph.empty_paragraph_height = line_height;
     }
-    paragraph.cursor_x_px += leading_space * pixels_per_point;
+    match leading_space {
+        super::LeadingSpace::FirstRow(value) => {
+            paragraph.cursor_x_px += *value * pixels_per_point;
+        }
+        super::LeadingSpace::Indent(value) => {
+            paragraph.indentation = *value;
+        }
+    }
 
     let section_text = &job.text[byte_range.clone()];
     let mut ctx = ShapingContext {
@@ -649,7 +662,7 @@ fn line_break(
     let mut row_break_candidates = RowBreakCandidates::default();
 
     let mut first_row_indentation = paragraph.glyphs[0].pos.x;
-    let mut row_start_x = 0.0;
+    let mut row_start_x = paragraph.indentation;
     let mut row_start_idx = 0;
 
     for i in 0..paragraph.glyphs.len() {
@@ -658,7 +671,8 @@ fn line_break(
             break;
         }
 
-        let potential_row_width = paragraph.glyphs[i].max_x() - row_start_x;
+        let potential_row_width =
+            paragraph.glyphs[i].max_x() - row_start_x + paragraph.indentation;
 
         if wrap_width < potential_row_width {
             // Row break:
@@ -682,11 +696,17 @@ fn line_break(
                 first_row_indentation = 0.0;
             } else if let Some(last_kept_index) = row_break_candidates.get(job.wrap.break_anywhere)
             {
+                // The first row was already indented when creating the Paragraph
+                let indentation = if out_rows.is_empty() {
+                    0.0
+                } else {
+                    paragraph.indentation
+                };
                 let glyphs: Vec<Glyph> = paragraph.glyphs[row_start_idx..=last_kept_index]
                     .iter()
                     .copied()
                     .map(|mut glyph| {
-                        glyph.pos.x -= row_start_x;
+                        glyph.pos.x += indentation - row_start_x;
                         glyph
                     })
                     .collect();
@@ -723,19 +743,25 @@ fn line_break(
         if job.wrap.max_rows <= out_rows.len() {
             *elided = true; // can't fit another row
         } else {
-            let paragraph_min_x = paragraph.glyphs[row_start_idx].pos.x - row_start_x;
-            let paragraph_max_x = paragraph.glyphs.last().unwrap().max_x() - row_start_x;
-
+            // The first row was already indented when creating the Paragraph
+            let indentation = if out_rows.is_empty() {
+                0.0
+            } else {
+                paragraph.indentation
+            };
             let glyphs: Vec<Glyph> = paragraph.glyphs[row_start_idx..]
                 .iter()
                 .copied()
                 .map(|mut glyph| {
-                    glyph.pos.x -= row_start_x + paragraph_min_x;
+                    glyph.pos.x += indentation - row_start_x;
                     glyph
                 })
                 .collect();
 
             let section_index_at_start = glyphs[0].section_index;
+            // TODO(juan): is 0.0 correct here?
+            let paragraph_min_x = 0.0; //glyphs[0].pos.x;
+            let paragraph_max_x = glyphs.last().unwrap().max_x();
 
             out_rows.push(PlacedRow {
                 pos: pos2(paragraph_min_x, 0.0),
