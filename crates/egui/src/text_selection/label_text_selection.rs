@@ -169,6 +169,17 @@ impl LabelSelectionState {
         self.states.clear();
     }
 
+    /// MEMBRANE: Whether any label in the current viewport is hovered in this pass. This can be used
+    /// to disambiguate between text selection and other drag interactions.
+    pub fn any_hovered(ctx: &Context) -> bool {
+        let plugin = ctx.plugin::<Self>();
+        let plugin = plugin.lock();
+        plugin
+            .states
+            .get(&ctx.viewport_id())
+            .is_some_and(|state| state.any_hovered)
+    }
+
     /// Handle text selection state for a label or similar widget.
     /// This also takes care of painting the galley.
     pub fn label_text_selection(
