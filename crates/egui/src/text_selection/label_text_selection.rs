@@ -223,6 +223,13 @@ impl LabelSelectionState {
         self.selection = None;
     }
 
+    /// MEMBRANE: Whether any label is being hovered, this can be used to disambiguate
+    /// between text selection and other drag interactions
+    pub fn any_hovered(ctx: &Context) -> bool {
+        let id = Id::new(ctx.viewport_id());
+        ctx.data(|data| data.get_temp::<Self>(id).map_or(false, |s| s.any_hovered))
+    }
+
     fn copy_text(&mut self, new_galley_rect: Rect, galley: &Galley, cursor_range: &CCursorRange) {
         let new_text = selected_text(galley, cursor_range);
         if new_text.is_empty() {
