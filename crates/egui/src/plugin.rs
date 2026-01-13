@@ -1,7 +1,7 @@
 use crate::{Context, FullOutput, RawInput, Ui};
 use ahash::HashMap;
 use epaint::mutex::{Mutex, MutexGuard};
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicUsize};
 
 /// A plugin to extend egui.
 ///
@@ -137,20 +137,35 @@ impl PluginHandle {
 pub(crate) struct Plugins {
     plugins: HashMap<std::any::TypeId, Arc<Mutex<PluginHandle>>>,
     plugins_ordered: PluginsOrdered,
+    executing_idx: Arc<Mutex<Option<usize>>>,
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct PluginsOrdered(Vec<Arc<Mutex<PluginHandle>>>);
+pub(crate) struct PluginsOrdered {
+    plugins: Vec<Arc<Mutex<PluginHandle>>>,
+    executing_idx: Arc<Mutex<Option<usize>>>,
+}
 
 impl PluginsOrdered {
     fn for_each_dyn<F>(&self, mut f: F)
     where
         F: FnMut(&mut dyn Plugin),
     {
-        for plugin in &self.0 {
+        for (idx, plugin) in self.plugins.iter().enumerate() {
             let mut plugin = plugin.lock();
+
+            // Prevent deadlock if a plugin is called recursively. Currently only possible if
+            // plugins create widgets which trigger on_widget_under_pointer.
+            {
+                let mut executing_idx = self.executing_idx.lock();
+                if executing_idx.map_or(false, |executing_idx| idx == executing_idx) {
+                    continue;
+                }
+                *executing_idx = Some(idx);
+            }
             profiling::scope!("plugin", plugin.dyn_plugin_mut().debug_name());
             f(plugin.dyn_plugin_mut());
+            *self.executing_idx.lock() = None;
         }
     }
 
@@ -210,7 +225,7 @@ impl Plugins {
         }
 
         self.plugins.insert(type_id, Arc::clone(&handle));
-        self.plugins_ordered.0.push(handle);
+        self.plugins_ordered.plugins.push(Arc::clone(&handle));
 
         true
     }
