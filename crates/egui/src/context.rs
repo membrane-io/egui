@@ -3001,6 +3001,14 @@ impl Context {
         }
     }
 
+    /// If `true`, egui was listening for keyboard input at the end of the previous frame.
+    ///
+    /// This is useful for command systems that need to know if text input was active
+    /// before egui processed built-in key handlers (like Escape clearing focus).
+    pub fn wanted_keyboard_input(&self) -> bool {
+        self.memory(|m| m.wanted_keyboard_input())
+    }
+
     /// Highlight this widget, to make it look like it is hovered, even if it isn't.
     ///
     /// If you call this after the widget has been fully rendered,
