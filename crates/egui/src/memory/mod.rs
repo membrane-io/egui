@@ -604,6 +604,10 @@ impl Focus {
         self.id_previous_frame == Some(id)
     }
 
+    pub(crate) fn any_focus_last_frame(&self) -> bool {
+        self.id_previous_frame.is_some()
+    }
+
     fn interested_in_focus(&mut self, id: Id) {
         if self.id_requested_by_accesskit == Some(id.accesskit_id()) {
             self.focused_widget = Some(FocusWidget::new(id));
@@ -845,6 +849,14 @@ impl Memory {
     /// Which widget has keyboard focus?
     pub fn focused(&self) -> Option<Id> {
         self.focus()?.focused()
+    }
+
+    /// Did any widget have keyboard focus at the end of the previous frame?
+    ///
+    /// This is useful for checking if text input was active before egui
+    /// processed built-in key handlers (like Escape clearing focus).
+    pub fn wanted_keyboard_input(&self) -> bool {
+        self.focus().is_some_and(|f| f.any_focus_last_frame())
     }
 
     /// Set an event filter for a widget.
