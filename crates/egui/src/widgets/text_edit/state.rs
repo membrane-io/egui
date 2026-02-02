@@ -5,9 +5,10 @@ use crate::mutex::Mutex;
 use crate::{
     Context, Id, Vec2,
     text_selection::{CCursorRange, TextCursorState},
+    widgets::text_edit::text_buffer::UndoState,
 };
 
-pub type TextEditUndoer = crate::util::undoer::Undoer<(CCursorRange, String)>;
+pub type TextEditUndoer = crate::util::undoer::Undoer<(CCursorRange, UndoState)>;
 
 /// The text edit state stored between frames.
 ///
