@@ -10,5 +10,5 @@ pub use {
     completion::{CompletionOutput, CompletionPopup, CompletionQuery, Suggestion},
     output::TextEditOutput,
     state::TextEditState,
-    text_buffer::TextBuffer,
+    text_buffer::{TextBuffer, UndoData, UndoState},
 };
