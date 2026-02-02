@@ -1,4 +1,4 @@
-use std::{borrow::Cow, ops::Range};
+use std::{any::Any, borrow::Cow, ops::Range};
 
 use epaint::{
     Galley,
@@ -12,6 +12,62 @@ use crate::{
         char_index_from_byte_index, find_line_start, slice_char_range,
     },
 };
+
+/// State stored for undo/redo operations.
+/// Contains the text content and optional custom data for extended buffers.
+#[derive(Clone)]
+pub struct UndoState {
+    /// The text content
+    pub text: String,
+    /// Optional custom data for extended buffers (e.g., entity spans)
+    pub data: Option<Box<dyn UndoData>>,
+}
+
+impl Default for UndoState {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            data: None,
+        }
+    }
+}
+
+impl PartialEq for UndoState {
+    fn eq(&self, other: &Self) -> bool {
+        // Only compare text for equality - data changes are tied to text changes
+        self.text == other.text
+    }
+}
+
+impl UndoState {
+    /// Create a new UndoState with just text
+    pub fn new(text: String) -> Self {
+        Self { text, data: None }
+    }
+
+    /// Create a new UndoState with text and custom data
+    pub fn with_data(text: String, data: Box<dyn UndoData>) -> Self {
+        Self {
+            text,
+            data: Some(data),
+        }
+    }
+}
+
+/// Trait for custom undo data that can be cloned
+pub trait UndoData: Any + Send + Sync {
+    /// Clone the data into a boxed trait object
+    fn clone_box(&self) -> Box<dyn UndoData>;
+
+    /// Get as Any for downcasting
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl Clone for Box<dyn UndoData> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
 
 /// Trait constraining what types [`crate::TextEdit`] may use as
 /// an underlying buffer.
@@ -175,6 +231,18 @@ pub trait TextBuffer {
         } else {
             self.delete_selected(&CCursorRange::two(min, max))
         }
+    }
+
+    /// Create an undo state snapshot of the current buffer.
+    /// Override this to include custom data (e.g., entity spans) in undo operations.
+    fn undo_state(&self) -> UndoState {
+        UndoState::new(self.as_str().to_owned())
+    }
+
+    /// Apply an undo state to restore the buffer.
+    /// Override this to restore custom data from the undo state.
+    fn apply_undo_state(&mut self, state: &UndoState) {
+        self.replace_with(&state.text);
     }
 
     /// Returns a unique identifier for the implementing type.
