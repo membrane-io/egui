@@ -261,6 +261,8 @@ fn should_prevent_default_for_key(
         egui::Key::O,     // open
         egui::Key::P,     // print (cmd-P is common for command palette)
         egui::Key::S,     // save
+        egui::Key::Z,     // undo/redo - prevent browser's native undo from interfering with text_agent
+        egui::Key::Y,     // redo on Windows/Linux
     ];
     for key in keys {
         if egui_key == key && (modifiers.ctrl || modifiers.command || modifiers.mac_cmd) {
