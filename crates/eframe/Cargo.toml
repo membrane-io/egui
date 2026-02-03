@@ -30,7 +30,9 @@ default = [
   "default_fonts",
   "wayland", # Required for Linux support (including CI!)
   "web_screen_reader",
-  "wgpu",
+  # MEMBRANE: disable wgpu here or rust-analyzer thinks we want it for some reason
+  # "wgpu",
+  "glow",
   "winit/default",
   "x11",
 ]
