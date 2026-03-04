@@ -13,6 +13,9 @@ use crate::{
 mod theme;
 pub use theme::{Theme, ThemePreference};
 
+mod topo_sort;
+use topo_sort::stable_topological_sort_sublayers;
+
 // ----------------------------------------------------------------------------
 
 /// The data that egui persists between frames.
@@ -1219,6 +1222,15 @@ impl Areas {
 
     pub fn remove(&mut self, id: Id) {
         self.areas.remove(&id);
+        let idx = self.order.iter().position(|layer| layer.id == id);
+        if let Some(idx) = idx {
+            let layer_id = self.order.remove(idx);
+            self.order_map.remove(&layer_id);
+            self.sublayers.remove(&layer_id);
+            self.sublayers.iter_mut().for_each(|(_, children)| {
+                children.remove(&layer_id);
+            });
+        }
     }
 
     pub fn get_mut(&mut self, id: Id) -> Option<&mut area::AreaState> {
@@ -1390,50 +1402,7 @@ impl Areas {
         });
         wants_to_be_on_top.clear();
 
-        // MEMBRANE: stable topological sort of sublayers.
-        // This adds support for sublayer parents who are also sublayers and fixes a flickering
-        // issue in the dashboard where stack blocks are sublayers of the backdrop but the pick
-        // overlays are sublayers of the block.
-        // Based on: https://blog.gapotchenko.com/stable-topological-sort. but instead of moving the
-        // parent back, it moves the children forward so if the parent was moved to the top, it
-        // stays on top (except for its sublayers).
-        let parents = std::mem::take(sublayers)
-            .into_iter()
-            .flat_map(|(parent, children)| children.into_iter().map(move |child| (child, parent)))
-            .collect::<HashMap<_, _>>();
-
-        fn is_ancestor(
-            parents: &HashMap<LayerId, LayerId>,
-            child: LayerId,
-            ancestor: LayerId,
-        ) -> bool {
-            let mut current = child;
-            while let Some(parent) = parents.get(&current) {
-                if parent == &ancestor {
-                    return true;
-                }
-                current = *parent;
-            }
-            false
-        }
-
-        'outer: loop {
-            for i in 0..order.len() {
-                for j in 0..i {
-                    if parents.get(&order[j]) == Some(&order[i]) {
-                        let circular = is_ancestor(&parents, order[i], order[j])
-                            && is_ancestor(&parents, order[j], order[i]);
-                        if !circular {
-                            let child = order.remove(j);
-                            order.insert((i + 1).min(order.len()), child);
-                            continue 'outer;
-                        }
-                    }
-                }
-            }
-            break;
-        }
-
+        stable_topological_sort_sublayers(order, std::mem::take(sublayers));
         self.order_map = self
             .order
             .iter()
@@ -1442,8 +1411,6 @@ impl Areas {
             .collect();
     }
 }
-
-// ----------------------------------------------------------------------------
 
 #[test]
 fn memory_impl_send_sync() {
