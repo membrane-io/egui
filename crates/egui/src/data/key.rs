@@ -85,6 +85,9 @@ pub enum Key {
     /// `'`
     Quote,
 
+    /// `@`
+    At,
+
     // ----------------------------------------------
     // Digits:
     /// `0` (from main row or numpad)
@@ -238,6 +241,7 @@ impl Key {
         Self::Questionmark,
         Self::Exclamationmark,
         Self::Quote,
+        Self::At,
         // Digits:
         Self::Num0,
         Self::Num1,
@@ -367,6 +371,7 @@ impl Key {
             "}" | "CloseCurlyBracket" => Self::CloseCurlyBracket,
             "`" | "Backtick" | "Backquote" | "Grave" => Self::Backtick,
             "'" | "Quote" => Self::Quote,
+            "@" | "At" => Self::At,
 
             "0" | "Digit0" | "Numpad0" => Self::Num0,
             "1" | "Digit1" | "Numpad1" => Self::Num1,
@@ -476,6 +481,7 @@ impl Key {
             Self::OpenCurlyBracket => "{",
             Self::CloseCurlyBracket => "}",
             Self::Backtick => "`",
+            Self::At => "@",
 
             _ => self.name(),
         }
@@ -524,6 +530,7 @@ impl Key {
             Self::CloseCurlyBracket => "CloseCurlyBracket",
             Self::Backtick => "Backtick",
             Self::Quote => "Quote",
+            Self::At => "At",
 
             Self::Num0 => "0",
             Self::Num1 => "1",
