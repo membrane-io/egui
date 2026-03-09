@@ -871,6 +871,150 @@ fn triangulate_convex_path(out: &mut Mesh, first_index: u32, stride: u32, num_po
     }
 }
 
+/// Triangulate a simple (non-self-intersecting) polygon using ear clipping.
+///
+/// Appends triangle indices to `out_indices`. The indices reference the vertex positions
+/// already in the output mesh at a known base offset.
+///
+/// `positions` must be in clockwise winding order.
+///
+/// - `idx_base`: the mesh index of the first polygon vertex.
+/// - `idx_stride`: the stride between logical polygon vertices in the mesh
+///   (1 for fill-only, 2 for fill-with-feathering, 4 for fill-with-stroke).
+fn ear_clip_triangulate(
+    positions: &[Pos2],
+    out_indices: &mut Vec<u32>,
+    idx_base: u32,
+    idx_stride: u32,
+) {
+    let n = positions.len();
+    if n < 3 {
+        return;
+    }
+    if n == 3 {
+        out_indices.push(idx_base);
+        out_indices.push(idx_base + idx_stride);
+        out_indices.push(idx_base + 2 * idx_stride);
+        return;
+    }
+
+    // 2D cross product of (b-a) × (c-b). Positive = CW turn (convex for CW polygon).
+    let cross = |a: Pos2, b: Pos2, c: Pos2| -> f32 {
+        let ab = b - a;
+        let bc = c - b;
+        ab.x * bc.y - ab.y * bc.x
+    };
+
+    // Returns true if point p is inside (or on) the CW triangle (a, b, c).
+    let point_in_triangle = |p: Pos2, a: Pos2, b: Pos2, c: Pos2| -> bool {
+        let d1 = {
+            let ab = b - a;
+            let ap = p - a;
+            ab.x * ap.y - ab.y * ap.x
+        };
+        let d2 = {
+            let bc = c - b;
+            let bp = p - b;
+            bc.x * bp.y - bc.y * bp.x
+        };
+        let d3 = {
+            let ca = a - c;
+            let cp = p - c;
+            ca.x * cp.y - ca.y * cp.x
+        };
+        let has_neg = (d1 < 0.0) || (d2 < 0.0) || (d3 < 0.0);
+        let has_pos = (d1 > 0.0) || (d2 > 0.0) || (d3 > 0.0);
+        !(has_neg && has_pos)
+    };
+
+    // remaining[i] = original vertex index of the i-th vertex still in the polygon.
+    let mut remaining: Vec<usize> = (0..n).collect();
+
+    // Track reflex vertices (interior angle > 180°, cross product < 0 for CW polygon).
+    let mut reflex: Vec<bool> = (0..n)
+        .map(|i| {
+            let prev = if i == 0 { n - 1 } else { i - 1 };
+            let next = if i + 1 == n { 0 } else { i + 1 };
+            cross(positions[prev], positions[i], positions[next]) < 0.0
+        })
+        .collect();
+
+    let mut ear_found_in_pass = true;
+    while remaining.len() > 2 && ear_found_in_pass {
+        ear_found_in_pass = false;
+        let mut i = 0;
+        while i < remaining.len() {
+            let m = remaining.len();
+            let prev_i = (i + m - 1) % m;
+            let next_i = (i + 1) % m;
+            let prev = remaining[prev_i];
+            let curr = remaining[i];
+            let next = remaining[next_i];
+
+            // Reflex vertices cannot be ears.
+            if reflex[curr] {
+                i += 1;
+                continue;
+            }
+
+            let a = positions[prev];
+            let b = positions[curr];
+            let c = positions[next];
+
+            // Check if any reflex vertex lies inside this candidate ear triangle.
+            let has_inside = remaining.iter().enumerate().any(|(j, &v)| {
+                j != prev_i
+                    && j != i
+                    && j != next_i
+                    && reflex[v]
+                    && point_in_triangle(positions[v], a, b, c)
+            });
+
+            if !has_inside {
+                out_indices.push(idx_base + prev as u32 * idx_stride);
+                out_indices.push(idx_base + curr as u32 * idx_stride);
+                out_indices.push(idx_base + next as u32 * idx_stride);
+
+                remaining.remove(i);
+                ear_found_in_pass = true;
+
+                let new_m = remaining.len();
+                if new_m < 3 {
+                    break;
+                }
+
+                // After removing index i, update reflex status for the two neighbors.
+                let new_prev_i = if i == 0 { new_m - 1 } else { prev_i };
+                let new_next_i = i % new_m;
+
+                let pp = remaining[(new_prev_i + new_m - 1) % new_m];
+                let pn = remaining[(new_prev_i + 1) % new_m];
+                reflex[prev] = cross(positions[pp], positions[prev], positions[pn]) < 0.0;
+
+                let np = remaining[(new_next_i + new_m - 1) % new_m];
+                let nn = remaining[(new_next_i + 1) % new_m];
+                reflex[next] = cross(positions[np], positions[next], positions[nn]) < 0.0;
+
+                // Restart from prev to re-check it.
+                i = new_prev_i;
+            } else {
+                i += 1;
+            }
+        }
+    }
+}
+
+/// MEMBRANE: ear-clip-triangulate a path that can be concave.
+///
+/// See [`FillTriangulation`]. This is slower than [`triangulate_convex_path`], but correct for
+/// any simple (non-self-intersecting) polygon.
+fn triangulate_concave_path(out: &mut Mesh, first_index: u32, stride: u32, num_points: u32) {
+    let positions: Vec<Pos2> = (0..num_points)
+        .map(|i| out.vertices[(first_index + stride * i) as usize].pos)
+        .collect();
+    ear_clip_triangulate(&positions, &mut out.indices, first_index, stride);
+}
+
 /// Tessellate the given convex area into a polygon.
 ///
 /// Calling this may reverse the vertices in the path if they are wrong winding order.
@@ -1876,6 +2020,7 @@ impl Tessellator {
             closed,
             fill,
             stroke,
+            convex,
         } = path_shape;
 
         self.scratchpad_path.clear();
@@ -1883,8 +2028,21 @@ impl Tessellator {
         if *closed {
             self.scratchpad_path.add_line_loop(points);
 
-            self.scratchpad_path
-                .fill_and_stroke(self.feathering, *fill, stroke, out);
+            // MEMBRANE: a concave path needs ear clipping for its fill.
+            let triangulate: FillTriangulation<'_> = if *convex {
+                &triangulate_convex_path
+            } else {
+                &triangulate_concave_path
+            };
+            stroke_and_fill_path(
+                self.feathering,
+                &mut self.scratchpad_path.0,
+                PathType::Closed,
+                stroke,
+                *fill,
+                triangulate,
+                out,
+            );
         } else {
             debug_assert_eq!(
                 *fill,

@@ -67,6 +67,7 @@ impl CubicBezierShape {
                 closed: self.closed,
                 fill: self.fill,
                 stroke: self.stroke.clone(),
+                convex: true,
             };
             pathshapes.push(pathshape);
         }
@@ -433,6 +434,7 @@ impl QuadraticBezierShape {
             closed: self.closed,
             fill: self.fill,
             stroke: self.stroke.clone(),
+            convex: true,
         }
     }
 

@@ -81,6 +81,7 @@ impl Default for DemoGroups {
                 Box::<super::band::BandDemo>::default(),
                 Box::<super::paint_bezier::PaintBezier>::default(),
                 Box::<super::code_editor::CodeEditor>::default(),
+                Box::<super::concave_polygon::ConcavePolygonDemo>::default(),
                 Box::<super::code_example::CodeExample>::default(),
                 Box::<super::completion::CompletionDemo>::default(),
                 Box::<super::dancing_strings::DancingStrings>::default(),
