@@ -479,14 +479,26 @@ impl Path {
     ///
     /// Calling this may reverse the vertices in the path if they are wrong winding order.
     /// The preferred winding order is clockwise.
+    ///
+    /// When `convex` is `false`, ear-clipping triangulation is used for the fill instead of
+    /// the fast triangle fan. This is slower but correct for concave (non-convex) polygons.
     pub fn fill_and_stroke(
         &mut self,
         feathering: f32,
         fill: Color32,
         stroke: &PathStroke,
+        convex: bool,
         out: &mut Mesh,
     ) {
-        stroke_and_fill_path(feathering, &mut self.0, PathType::Closed, stroke, fill, out);
+        stroke_and_fill_path(
+            feathering,
+            &mut self.0,
+            PathType::Closed,
+            stroke,
+            fill,
+            convex,
+            out,
+        );
     }
 
     /// Open-ended.
@@ -514,7 +526,7 @@ impl Path {
     /// Calling this may reverse the vertices in the path if they are wrong winding order.
     /// The preferred winding order is clockwise.
     pub fn fill(&mut self, feathering: f32, color: Color32, out: &mut Mesh) {
-        fill_closed_path(feathering, &mut self.0, color, out);
+        fill_closed_path(feathering, &mut self.0, color, true, out);
     }
 
     /// Like [`Self::fill`] but with texturing.
@@ -528,7 +540,15 @@ impl Path {
         uv_from_pos: impl Fn(Pos2) -> Pos2,
         out: &mut Mesh,
     ) {
-        fill_closed_path_with_uv(feathering, &mut self.0, color, texture_id, uv_from_pos, out);
+        fill_closed_path_with_uv(
+            feathering,
+            &mut self.0,
+            color,
+            texture_id,
+            uv_from_pos,
+            true,
+            out,
+        );
     }
 }
 
@@ -757,12 +777,182 @@ fn cw_signed_area(path: &[PathPoint]) -> f64 {
     }
 }
 
-/// Tessellate the given convex area into a polygon.
+/// Triangulate a simple (non-self-intersecting) polygon using ear clipping.
+///
+/// Appends triangle indices to `out_indices`. The indices reference the vertex positions
+/// already in the output mesh at a known base offset.
+///
+/// `positions` must be in clockwise winding order.
+///
+/// - `idx_base`: the mesh index of the first polygon vertex.
+/// - `idx_stride`: the stride between logical polygon vertices in the mesh
+///   (1 for fill-only, 2 for fill-with-feathering, 4 for fill-with-stroke).
+fn ear_clip_triangulate(
+    positions: &[Pos2],
+    out_indices: &mut Vec<u32>,
+    idx_base: u32,
+    idx_stride: u32,
+) {
+    let n = positions.len();
+    if n < 3 {
+        return;
+    }
+    if n == 3 {
+        out_indices.push(idx_base);
+        out_indices.push(idx_base + idx_stride);
+        out_indices.push(idx_base + 2 * idx_stride);
+        return;
+    }
+
+    // 2D cross product of (b-a) × (c-b). Positive = CW turn (convex for CW polygon).
+    let cross = |a: Pos2, b: Pos2, c: Pos2| -> f32 {
+        let ab = b - a;
+        let bc = c - b;
+        ab.x * bc.y - ab.y * bc.x
+    };
+
+    // Returns true if point p is inside (or on) the CW triangle (a, b, c).
+    let point_in_triangle = |p: Pos2, a: Pos2, b: Pos2, c: Pos2| -> bool {
+        let d1 = {
+            let ab = b - a;
+            let ap = p - a;
+            ab.x * ap.y - ab.y * ap.x
+        };
+        let d2 = {
+            let bc = c - b;
+            let bp = p - b;
+            bc.x * bp.y - bc.y * bp.x
+        };
+        let d3 = {
+            let ca = a - c;
+            let cp = p - c;
+            ca.x * cp.y - ca.y * cp.x
+        };
+        let has_neg = (d1 < 0.0) || (d2 < 0.0) || (d3 < 0.0);
+        let has_pos = (d1 > 0.0) || (d2 > 0.0) || (d3 > 0.0);
+        !(has_neg && has_pos)
+    };
+
+    // remaining[i] = original vertex index of the i-th vertex still in the polygon.
+    let mut remaining: Vec<usize> = (0..n).collect();
+
+    // Track reflex vertices (interior angle > 180°, cross product < 0 for CW polygon).
+    let mut reflex: Vec<bool> = (0..n)
+        .map(|i| {
+            let prev = if i == 0 { n - 1 } else { i - 1 };
+            let next = if i + 1 == n { 0 } else { i + 1 };
+            cross(positions[prev], positions[i], positions[next]) < 0.0
+        })
+        .collect();
+
+    let mut ear_found_in_pass = true;
+    while remaining.len() > 2 && ear_found_in_pass {
+        ear_found_in_pass = false;
+        let mut i = 0;
+        while i < remaining.len() {
+            let m = remaining.len();
+            let prev_i = (i + m - 1) % m;
+            let next_i = (i + 1) % m;
+            let prev = remaining[prev_i];
+            let curr = remaining[i];
+            let next = remaining[next_i];
+
+            // Reflex vertices cannot be ears.
+            if reflex[curr] {
+                i += 1;
+                continue;
+            }
+
+            let a = positions[prev];
+            let b = positions[curr];
+            let c = positions[next];
+
+            // Check if any reflex vertex lies inside this candidate ear triangle.
+            let has_inside = remaining.iter().enumerate().any(|(j, &v)| {
+                j != prev_i
+                    && j != i
+                    && j != next_i
+                    && reflex[v]
+                    && point_in_triangle(positions[v], a, b, c)
+            });
+
+            if !has_inside {
+                out_indices.push(idx_base + prev as u32 * idx_stride);
+                out_indices.push(idx_base + curr as u32 * idx_stride);
+                out_indices.push(idx_base + next as u32 * idx_stride);
+
+                remaining.remove(i);
+                ear_found_in_pass = true;
+
+                let new_m = remaining.len();
+                if new_m < 3 {
+                    break;
+                }
+
+                // After removing index i, update reflex status for the two neighbors.
+                let new_prev_i = if i == 0 { new_m - 1 } else { prev_i };
+                let new_next_i = i % new_m;
+
+                let pp = remaining[(new_prev_i + new_m - 1) % new_m];
+                let pn = remaining[(new_prev_i + 1) % new_m];
+                reflex[prev] = cross(positions[pp], positions[prev], positions[pn]) < 0.0;
+
+                let np = remaining[(new_next_i + new_m - 1) % new_m];
+                let nn = remaining[(new_next_i + 1) % new_m];
+                reflex[next] = cross(positions[np], positions[next], positions[nn]) < 0.0;
+
+                // Restart from prev to re-check it.
+                i = new_prev_i;
+            } else {
+                i += 1;
+            }
+        }
+    }
+}
+
+/// Fill a closed polygon using either a triangle fan (convex) or ear-clipping (concave).
+///
+/// - `idx_base`: mesh index of the first fill vertex.
+/// - `idx_stride`: stride between consecutive fill vertices in the mesh.
+/// - `pos_fn`: computes the geometric position of each fill vertex (used only for ear-clipping).
+fn fill_polygon_triangles(
+    path: &[PathPoint],
+    out: &mut Mesh,
+    idx_base: u32,
+    idx_stride: u32,
+    convex: bool,
+    pos_fn: impl Fn(&PathPoint) -> Pos2,
+) {
+    let n = path.len() as u32;
+    if convex {
+        for i in 2..n {
+            out.add_triangle(
+                idx_base + idx_stride * (i - 1),
+                idx_base,
+                idx_base + idx_stride * i,
+            );
+        }
+    } else {
+        let positions: Vec<Pos2> = path.iter().map(pos_fn).collect();
+        ear_clip_triangulate(&positions, &mut out.indices, idx_base, idx_stride);
+    }
+}
+
+/// Tessellate the given area into a polygon.
 ///
 /// Calling this may reverse the vertices in the path if they are wrong winding order.
 ///
 /// The preferred winding order is clockwise.
-fn fill_closed_path(feathering: f32, path: &mut [PathPoint], fill_color: Color32, out: &mut Mesh) {
+///
+/// When `convex` is `true`, a fast triangle fan is used (only correct for convex polygons).
+/// When `convex` is `false`, ear-clipping triangulation is used (correct for any simple polygon).
+fn fill_closed_path(
+    feathering: f32,
+    path: &mut [PathPoint],
+    fill_color: Color32,
+    convex: bool,
+    out: &mut Mesh,
+) {
     if fill_color == Color32::TRANSPARENT {
         return;
     }
@@ -787,9 +977,9 @@ fn fill_closed_path(feathering: f32, path: &mut [PathPoint], fill_color: Color32
         let idx_outer = idx_inner + 1;
 
         // The fill:
-        for i in 2..n {
-            out.add_triangle(idx_inner + 2 * (i - 1), idx_inner, idx_inner + 2 * i);
-        }
+        fill_polygon_triangles(path, out, idx_inner, 2, convex, |p| {
+            p.pos - 0.5 * feathering * p.normal
+        });
 
         // The feathering:
         let mut i0 = n - 1;
@@ -811,9 +1001,7 @@ fn fill_closed_path(feathering: f32, path: &mut [PathPoint], fill_color: Color32
         let idx = out.vertices.len() as u32;
         out.vertices
             .extend(path.iter().map(|p| Vertex::untextured(p.pos, fill_color)));
-        for i in 2..n {
-            out.add_triangle(idx, idx + i - 1, idx + i);
-        }
+        fill_polygon_triangles(path, out, idx, 1, convex, |p| p.pos);
     }
 }
 
@@ -826,6 +1014,7 @@ fn fill_closed_path_with_uv(
     color: Color32,
     texture_id: TextureId,
     uv_from_pos: impl Fn(Pos2) -> Pos2,
+    convex: bool,
     out: &mut Mesh,
 ) {
     if color == Color32::TRANSPARENT {
@@ -858,9 +1047,9 @@ fn fill_closed_path_with_uv(
         let idx_outer = idx_inner + 1;
 
         // The fill:
-        for i in 2..n {
-            out.add_triangle(idx_inner + 2 * (i - 1), idx_inner, idx_inner + 2 * i);
-        }
+        fill_polygon_triangles(path, out, idx_inner, 2, convex, |p| {
+            p.pos - 0.5 * feathering * p.normal
+        });
 
         // The feathering:
         let mut i0 = n - 1;
@@ -894,9 +1083,7 @@ fn fill_closed_path_with_uv(
             uv: uv_from_pos(p.pos),
             color,
         }));
-        for i in 2..n {
-            out.add_triangle(idx, idx + i - 1, idx + i);
-        }
+        fill_polygon_triangles(path, out, idx, 1, convex, |p| p.pos);
     }
 }
 
@@ -909,7 +1096,7 @@ fn stroke_path(
     out: &mut Mesh,
 ) {
     let fill = Color32::TRANSPARENT;
-    stroke_and_fill_path(feathering, path, path_type, stroke, fill, out);
+    stroke_and_fill_path(feathering, path, path_type, stroke, fill, true, out);
 }
 
 /// Tessellate the given path as a stroke with thickness, with optional fill color.
@@ -917,12 +1104,16 @@ fn stroke_path(
 /// Calling this may reverse the vertices in the path if they are wrong winding order.
 ///
 /// The preferred winding order is clockwise.
+///
+/// When `convex` is `false`, ear-clipping triangulation is used for the fill instead of
+/// the fast triangle fan. This is slower but correct for concave (non-convex) polygons.
 fn stroke_and_fill_path(
     feathering: f32,
     path: &mut [PathPoint],
     path_type: PathType,
     stroke: &PathStroke,
     color_fill: Color32,
+    convex: bool,
     out: &mut Mesh,
 ) {
     let n = path.len() as u32;
@@ -933,7 +1124,7 @@ fn stroke_and_fill_path(
 
     if stroke.width == 0.0 {
         // Skip the stroke, just fill.
-        return fill_closed_path(feathering, path, color_fill, out);
+        return fill_closed_path(feathering, path, color_fill, convex, out);
     }
 
     if color_fill != Color32::TRANSPARENT && cw_signed_area(path) < 0.0 {
@@ -961,7 +1152,7 @@ fn stroke_and_fill_path(
         }
 
         // Skip the stroke, just fill.
-        return fill_closed_path(feathering, path, color_fill, out);
+        return fill_closed_path(feathering, path, color_fill, convex, out);
     }
 
     let idx = out.vertices.len() as u32;
@@ -1055,10 +1246,9 @@ fn stroke_and_fill_path(
 
             if color_fill != Color32::TRANSPARENT {
                 out.reserve_triangles(n as usize - 2);
-                let idx_fill = idx + 2;
-                for i in 2..n {
-                    out.add_triangle(idx_fill + 3 * (i - 1), idx_fill, idx_fill + 3 * i);
-                }
+                fill_polygon_triangles(path, out, idx + 2, 3, convex, |p| {
+                    p.pos - feathering * p.normal
+                });
             }
         } else {
             // thick anti-aliased line
@@ -1111,10 +1301,10 @@ fn stroke_and_fill_path(
 
                     if color_fill != Color32::TRANSPARENT {
                         out.reserve_triangles(n as usize - 2);
-                        let idx_fill = idx + 3;
-                        for i in 2..n {
-                            out.add_triangle(idx_fill + 4 * (i - 1), idx_fill, idx_fill + 4 * i);
-                        }
+                        let outer_rad = 0.5 * (stroke.width + feathering);
+                        fill_polygon_triangles(path, out, idx + 3, 4, convex, |p| {
+                            p.pos - outer_rad * p.normal
+                        });
                     }
                 }
                 PathType::Open => {
@@ -1281,7 +1471,7 @@ fn stroke_and_fill_path(
                 point.pos -= 0.5 * stroke.width * point.normal;
             }
             // …then fill:
-            fill_closed_path(feathering, path, color_fill, out);
+            fill_closed_path(feathering, path, color_fill, convex, out);
         }
     }
 }
@@ -1530,7 +1720,7 @@ impl Tessellator {
         self.scratchpad_path.clear();
         self.scratchpad_path.add_circle(center, radius);
         self.scratchpad_path
-            .fill_and_stroke(self.feathering, fill, &path_stroke, out);
+            .fill_and_stroke(self.feathering, fill, &path_stroke, true, out);
     }
 
     /// Tessellate a single [`EllipseShape`] into a [`Mesh`].
@@ -1606,7 +1796,7 @@ impl Tessellator {
         self.scratchpad_path.clear();
         self.scratchpad_path.add_line_loop(&points);
         self.scratchpad_path
-            .fill_and_stroke(self.feathering, fill, &path_stroke, out);
+            .fill_and_stroke(self.feathering, fill, &path_stroke, true, out);
     }
 
     /// Tessellate a single [`Mesh`] into a [`Mesh`].
@@ -1725,6 +1915,7 @@ impl Tessellator {
             closed,
             fill,
             stroke,
+            convex,
         } = path_shape;
 
         self.scratchpad_path.clear();
@@ -1733,7 +1924,7 @@ impl Tessellator {
             self.scratchpad_path.add_line_loop(points);
 
             self.scratchpad_path
-                .fill_and_stroke(self.feathering, *fill, stroke, out);
+                .fill_and_stroke(self.feathering, *fill, stroke, *convex, out);
         } else {
             debug_assert_eq!(
                 *fill,
@@ -1979,7 +2170,7 @@ impl Tessellator {
             }
         } else {
             // Stroke and maybe fill
-            path.fill_and_stroke(self.feathering, fill, &path_stroke, out);
+            path.fill_and_stroke(self.feathering, fill, &path_stroke, true, out);
         }
 
         self.feathering = old_feathering; // restore
@@ -2182,7 +2373,7 @@ impl Tessellator {
             self.scratchpad_path.add_line_loop(points);
 
             self.scratchpad_path
-                .fill_and_stroke(self.feathering, fill, stroke, out);
+                .fill_and_stroke(self.feathering, fill, stroke, true, out);
         } else {
             debug_assert_eq!(
                 fill,

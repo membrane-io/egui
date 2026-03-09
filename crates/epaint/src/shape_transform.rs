@@ -29,6 +29,7 @@ pub fn adjust_colors(
             closed: _,
             fill,
             stroke,
+            convex: _,
         })
         | Shape::QuadraticBezier(QuadraticBezierShape {
             points: _,

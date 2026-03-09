@@ -74,6 +74,7 @@ impl Default for DemoGroups {
             demos: DemoGroup::new(vec![
                 Box::<super::paint_bezier::PaintBezier>::default(),
                 Box::<super::code_editor::CodeEditor>::default(),
+                Box::<super::concave_polygon::ConcavePolygonDemo>::default(),
                 Box::<super::code_example::CodeExample>::default(),
                 Box::<super::dancing_strings::DancingStrings>::default(),
                 Box::<super::drag_and_drop::DragAndDropDemo>::default(),

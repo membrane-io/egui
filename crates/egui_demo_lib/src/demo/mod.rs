@@ -6,6 +6,7 @@
 
 pub mod about;
 pub mod code_editor;
+pub mod concave_polygon;
 pub mod code_example;
 pub mod dancing_strings;
 pub mod demo_app_windows;

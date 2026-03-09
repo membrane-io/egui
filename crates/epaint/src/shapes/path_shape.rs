@@ -11,11 +11,16 @@ pub struct PathShape {
     /// This is required if `fill != TRANSPARENT`.
     pub closed: bool,
 
-    /// Fill is only supported for convex polygons.
+    /// Fill color for closed paths.
     pub fill: Color32,
 
     /// Color and thickness of the line.
     pub stroke: PathStroke,
+
+    /// If `true`, the polygon is assumed convex and a fast triangle fan is used for fill.
+    /// If `false`, ear-clipping triangulation is used (slower but correct for concave shapes).
+    /// Default: `true` (for backwards compatibility).
+    pub convex: bool,
     // TODO(emilk): Add texture support either by supplying uv for each point,
     // or by some transform from points to uv (e.g. a callback or a linear transform matrix).
 }
@@ -31,6 +36,7 @@ impl PathShape {
             closed: false,
             fill: Default::default(),
             stroke: stroke.into(),
+            convex: true,
         }
     }
 
@@ -42,6 +48,7 @@ impl PathShape {
             closed: true,
             fill: Default::default(),
             stroke: stroke.into(),
+            convex: true,
         }
     }
 
@@ -59,6 +66,27 @@ impl PathShape {
             closed: true,
             fill: fill.into(),
             stroke: stroke.into(),
+            convex: true,
+        }
+    }
+
+    /// A closed polygon that may be concave (non-convex).
+    ///
+    /// Uses ear-clipping triangulation for the fill, which is slower than
+    /// the triangle fan used for convex polygons but produces correct results
+    /// for any simple (non-self-intersecting) polygon.
+    #[inline]
+    pub fn polygon(
+        points: Vec<Pos2>,
+        fill: impl Into<Color32>,
+        stroke: impl Into<PathStroke>,
+    ) -> Self {
+        Self {
+            points,
+            closed: true,
+            fill: fill.into(),
+            stroke: stroke.into(),
+            convex: false,
         }
     }
 
