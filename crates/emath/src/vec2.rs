@@ -89,6 +89,13 @@ impl From<&Vec2> for (f32, f32) {
     }
 }
 
+impl From<f32> for Vec2 {
+    #[inline(always)]
+    fn from(v: f32) -> Self {
+        Self { x: v, y: v }
+    }
+}
+
 impl From<Vec2b> for Vec2 {
     #[inline(always)]
     fn from(v: Vec2b) -> Self {
