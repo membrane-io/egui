@@ -3625,7 +3625,15 @@ impl Context {
                     let response =
                         ui.add(Label::new(RichText::new(text).monospace()).sense(Sense::click()));
                     if response.hovered() && is_visible {
-                        ui.debug_painter().debug_rect(area.rect(), Color32::RED, "");
+                        // MEMBRANE: consider transform when showing layer rects.
+                        let transform =
+                            self.layer_transform_to_global(layer_id).unwrap_or_default();
+                        let rect = transform * area.rect();
+                        ui.debug_painter().debug_rect(
+                            rect,
+                            Color32::RED,
+                            layer_id.short_debug_format(),
+                        );
                     }
                 } else {
                     ui.monospace(layer_id.short_debug_format());
