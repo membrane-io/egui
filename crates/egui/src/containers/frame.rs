@@ -440,21 +440,22 @@ impl Frame {
             epaint::StrokeKind::Inside,
         ));
 
-        // MEMBRANE: experimental second dark stroke for all frames
-        let outline_shape = Shape::Rect(epaint::RectShape::new(
-            widget_rect,
-            corner_radius,
-            Color32::TRANSPARENT,
-            Stroke::new(
-                1.0,
-                Color32::from_black_alpha(200).gamma_multiply_u8(stroke.color.a()),
-            ),
-            epaint::StrokeKind::Outside,
-        ));
-
         if shadow == Default::default() {
             frame_shape
         } else {
+            // MEMBRANE: hacky way to add a second dark stroke for to all frames with stroke and shadow
+
+            let outline_opacity = stroke.color.a();
+            let outline_shape = Shape::Rect(epaint::RectShape::new(
+                widget_rect,
+                corner_radius,
+                Color32::TRANSPARENT,
+                Stroke::new(
+                    1.0,
+                    Color32::from_black_alpha(200).gamma_multiply_u8(outline_opacity),
+                ),
+                epaint::StrokeKind::Outside,
+            ));
             let shadow = shadow.as_shape(widget_rect, corner_radius);
             Shape::Vec(vec![Shape::from(shadow), frame_shape, outline_shape])
         }
