@@ -373,7 +373,7 @@ pub struct AllocatedAtomLayout<'a> {
     pub response: Response,
     grow_count: usize,
     // The size of the inner content, before any growing.
-    desired_size: Vec2,
+    pub desired_size: Vec2, // MEMBRANE: made public for Inset
     align2: Align2,
     gap: f32,
     selectable: bool,
