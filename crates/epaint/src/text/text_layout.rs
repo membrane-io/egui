@@ -1276,7 +1276,7 @@ fn add_row_backgrounds(point_scale: PointScale, job: &LayoutJob, row: &Row, mesh
     for glyph in &row.glyphs {
         let format = &job.sections[glyph.section_index as usize].format;
         let color = format.background;
-        let rect = glyph.logical_rect();
+        let rect = glyph.background_rect();
 
         if color == Color32::TRANSPARENT {
             end_run(run_start.take(), last_rect.right());
