@@ -1293,52 +1293,6 @@ impl Context {
                     true
                 });
         });
-
-        self.write(|ctx| {
-            use crate::{Align, pass_state::ScrollTarget, style::ScrollAnimation};
-            let viewport = ctx.viewport_for(ctx.viewport_id());
-
-            viewport
-                .input
-                .consume_accesskit_action_requests(res.id, |request| {
-                    use accesskit::Action;
-
-                    // TODO(lucasmerlin): Correctly handle the scroll unit:
-                    // https://github.com/AccessKit/accesskit/blob/e639c0e0d8ccbfd9dff302d972fa06f9766d608e/common/src/lib.rs#L2621
-                    const DISTANCE: f32 = 100.0;
-
-                    match &request.action {
-                        Action::ScrollIntoView => {
-                            viewport.this_pass.scroll_target = [
-                                Some(ScrollTarget::new(
-                                    res.rect.x_range(),
-                                    Some(Align::Center),
-                                    ScrollAnimation::none(),
-                                )),
-                                Some(ScrollTarget::new(
-                                    res.rect.y_range(),
-                                    Some(Align::Center),
-                                    ScrollAnimation::none(),
-                                )),
-                            ];
-                        }
-                        Action::ScrollDown => {
-                            viewport.this_pass.scroll_delta.0 += DISTANCE * Vec2::UP;
-                        }
-                        Action::ScrollUp => {
-                            viewport.this_pass.scroll_delta.0 += DISTANCE * Vec2::DOWN;
-                        }
-                        Action::ScrollLeft => {
-                            viewport.this_pass.scroll_delta.0 += DISTANCE * Vec2::LEFT;
-                        }
-                        Action::ScrollRight => {
-                            viewport.this_pass.scroll_delta.0 += DISTANCE * Vec2::RIGHT;
-                        }
-                        _ => return false,
-                    }
-                    true
-                });
-        });
         res
     }
 
