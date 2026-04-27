@@ -262,7 +262,7 @@ pub struct InputState {
     viewport_rect: Rect,
 
     /// The safe area insets, subtracted from the `viewport_rect` in [`Self::content_rect`].
-    safe_area_insets: SafeAreaInsets,
+    pub safe_area_insets: SafeAreaInsets,
 
     /// Also known as device pixel ratio, > 1 for high resolution screens.
     pub pixels_per_point: f32,
