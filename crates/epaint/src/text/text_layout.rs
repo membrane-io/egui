@@ -671,8 +671,7 @@ fn line_break(
             break;
         }
 
-        let potential_row_width =
-            paragraph.glyphs[i].max_x() - row_start_x + paragraph.indentation;
+        let potential_row_width = paragraph.glyphs[i].max_x() - row_start_x + paragraph.indentation;
 
         if wrap_width < potential_row_width {
             // Row break:
@@ -1152,7 +1151,7 @@ fn add_row_backgrounds(point_scale: PointScale, job: &LayoutJob, row: &Row, mesh
     for glyph in &row.glyphs {
         let format = &job.sections[glyph.section_index as usize].format;
         let color = format.background;
-        let rect = glyph.logical_rect();
+        let rect = glyph.background_rect();
 
         if color == Color32::TRANSPARENT {
             end_run(run_start.take(), last_rect.right());

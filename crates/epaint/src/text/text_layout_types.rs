@@ -908,6 +908,18 @@ impl Glyph {
     pub fn logical_rect(&self) -> Rect {
         Rect::from_min_size(self.pos - vec2(0.0, self.font_ascent), self.size())
     }
+
+    /// Extents for painting [`TextFormat::background`].
+    ///
+    /// Uses [`Self::font_height`] instead of [`Self::line_height`] so a custom
+    /// [`TextFormat::line_height`] only affects row spacing and alignment, not background size.
+    #[inline]
+    pub fn background_rect(&self) -> Rect {
+        Rect::from_min_size(
+            self.pos - vec2(0.0, self.font_ascent),
+            vec2(self.advance_width, self.font_height),
+        )
+    }
 }
 
 // ----------------------------------------------------------------------------
