@@ -279,6 +279,15 @@ impl Painter {
         &self.gl
     }
 
+    /// The linked program egui uses to paint its meshes. Exposed so a paint callback that
+    /// borrows egui's currently-bound VAO (e.g. to draw egui meshes through a replacement
+    /// shader) can query the *actual* attribute locations the driver assigned to `a_pos`,
+    /// `a_srgba`, and `a_tc` via [`glow::HasContext::get_attrib_location`], rather than
+    /// assuming declaration order (which is not portable across GL drivers).
+    pub fn program(&self) -> glow::Program {
+        self.program
+    }
+
     pub fn max_texture_side(&self) -> usize {
         self.max_texture_side
     }
