@@ -21,7 +21,10 @@ use web_sys::{Document, EventTarget, ShadowRoot};
 pub(crate) fn paint_and_schedule(runner_ref: &WebRunner) -> Result<(), JsValue> {
     // Only paint and schedule if there has been no panic
     if let Some(mut runner_lock) = runner_ref.try_lock() {
+        let frame_nr = runner_lock.egui_ctx().cumulative_frame_nr();
+        runner_ref.run_frame_begin(frame_nr);
         paint_if_needed(&mut runner_lock);
+        runner_ref.run_frame_end();
         drop(runner_lock);
         runner_ref.request_animation_frame()?;
     }
@@ -261,8 +264,8 @@ fn should_prevent_default_for_key(
         egui::Key::O,     // open
         egui::Key::P,     // print (cmd-P is common for command palette)
         egui::Key::S,     // save
-        egui::Key::Z,     // undo/redo - prevent browser's native undo from interfering with text_agent
-        egui::Key::Y,     // redo on Windows/Linux
+        egui::Key::Z, // undo/redo - prevent browser's native undo from interfering with text_agent
+        egui::Key::Y, // redo on Windows/Linux
     ];
     for key in keys {
         if egui_key == key && (modifiers.ctrl || modifiers.command || modifiers.mac_cmd) {

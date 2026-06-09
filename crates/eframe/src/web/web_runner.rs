@@ -7,6 +7,7 @@ use crate::{App, epi};
 use super::{
     AppRunner, PanicHandler,
     events::{self, ResizeObserverContext},
+    frame_hooks::FrameHooks,
     text_agent::TextAgent,
 };
 
@@ -33,6 +34,9 @@ pub struct WebRunner {
     frame: Rc<RefCell<Option<AnimationFrameRequest>>>,
 
     resize_observer: Rc<RefCell<Option<ResizeObserverContext>>>,
+
+    /// Callbacks invoked around each animation-frame callback.
+    frame_hooks: Rc<RefCell<FrameHooks>>,
 }
 
 impl WebRunner {
@@ -47,7 +51,29 @@ impl WebRunner {
             events_to_unsubscribe: Rc::new(RefCell::new(Default::default())),
             frame: Default::default(),
             resize_observer: Default::default(),
+            frame_hooks: Default::default(),
         }
+    }
+
+    /// Register a callback invoked at the start of each animation-frame callback, receiving the
+    /// egui frame number. Pairs with [`Self::on_frame_end`]. Used to bracket work that happens
+    /// within a single `requestAnimationFrame` invocation (e.g. to tag log events with the frame).
+    pub fn on_frame_begin(&self, callback: impl Fn(u64) + 'static) {
+        self.frame_hooks.borrow_mut().push_begin(Box::new(callback));
+    }
+
+    /// Register a callback invoked at the end of each animation-frame callback. Pairs with
+    /// [`Self::on_frame_begin`].
+    pub fn on_frame_end(&self, callback: impl Fn() + 'static) {
+        self.frame_hooks.borrow_mut().push_end(Box::new(callback));
+    }
+
+    pub(crate) fn run_frame_begin(&self, frame_nr: u64) {
+        self.frame_hooks.borrow().run_begin(frame_nr);
+    }
+
+    pub(crate) fn run_frame_end(&self) {
+        self.frame_hooks.borrow().run_end();
     }
 
     /// Create the application, install callbacks, and start running the app.

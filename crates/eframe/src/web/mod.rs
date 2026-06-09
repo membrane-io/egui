@@ -6,6 +6,7 @@
 mod app_runner;
 mod backend;
 mod events;
+mod frame_hooks;
 mod input;
 mod panic_handler;
 mod text_agent;
