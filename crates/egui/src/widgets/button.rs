@@ -352,7 +352,11 @@ impl<'a> Button<'a> {
         layout = if has_frame_margin && (state != WidgetState::Inactive || frame_when_inactive) {
             layout.frame(frame)
         } else {
-            layout.frame(Frame::new().inner_margin(frame.inner_margin))
+            // MEMBRANE: fix selectable buttons from growing when switching between selected and unselected
+            layout.frame(
+                Frame::new()
+                    .inner_margin(frame.inner_margin + Margin::same(frame.stroke.width as i8)),
+            )
         };
 
         let mut prepared = layout.min_size(min_size).allocate(ui);
