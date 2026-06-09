@@ -8,6 +8,7 @@ mod backend;
 mod canvas_glyphs;
 mod dropped_file;
 mod events;
+mod frame_hooks;
 mod input;
 mod panic_handler;
 mod text_agent;
