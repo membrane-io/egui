@@ -1519,7 +1519,7 @@ impl Prepared {
                 // Background:
                 ui.painter().add(epaint::Shape::rect_filled(
                     outer_scroll_bar_rect,
-                    visuals.corner_radius,
+                    3.0, // MEMBRANE: Hard-coded corner radius without changing style for everything
                     ui.visuals()
                         .extreme_bg_color
                         .gamma_multiply(background_opacity),
@@ -1528,7 +1528,7 @@ impl Prepared {
                 // Handle:
                 ui.painter().add(epaint::Shape::rect_filled(
                     handle_rect,
-                    visuals.corner_radius,
+                    3.0, // MEMBRANE: Hard-coded corner radius without changing style for everything
                     handle_color.gamma_multiply(handle_opacity),
                 ));
             }
