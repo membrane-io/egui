@@ -802,7 +802,7 @@ impl Context {
                 Id::new((ctx.viewport_id(), "__top_ui")),
                 UiBuilder::new()
                     .layer_id(LayerId::background())
-                    .max_rect(ctx.viewport_rect()),
+                    .max_rect(ctx.content_rect()),
             );
 
             {
