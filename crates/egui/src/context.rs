@@ -999,7 +999,7 @@ impl Context {
 
     /// Access the root [`Ui`] of the current pass.
     ///
-    /// The root [`Ui`] covers the entire [`Self::viewport_rect`].
+    /// The root [`Ui`] covers the [`Self::content_rect`] (MEMBRANE).
     /// It is the [`Ui`] given to the callback of [`Self::run_ui`],
     /// and the one that eframe gives to your app each frame.
     ///
@@ -1045,7 +1045,8 @@ impl Context {
                 self.viewport_id().root_ui_id(),
                 UiBuilder::new()
                     .layer_id(LayerId::background())
-                    .max_rect(self.viewport_rect()),
+                    // MEMBRANE: use content_rect, so that safe_area_insets reserve viewport space.
+                    .max_rect(self.content_rect()),
             ),
             RootUi::Borrowed => {
                 panic!(
