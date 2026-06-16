@@ -432,6 +432,9 @@ mod callstack;
 
 pub use accesskit;
 
+// MEMBRANE: re-export ahash (upstream dropped this in 0.34); downstream code uses `egui::ahash`.
+pub use ahash;
+
 pub use epaint;
 pub use epaint::ecolor;
 pub use epaint::emath;
