@@ -296,6 +296,37 @@ impl Response {
 
     /// MEMBRANE: detect clicks in the response rect even if it landed on a child widget.
     /// Not entirely sure if this is the best way to do this.
+    pub fn double_clicked_within(&self) -> bool {
+        let (pointer_interact_pos, double_clicked) = self.ctx.input(|i| {
+            (
+                i.pointer.interact_pos(),
+                i.pointer.button_double_clicked(PointerButton::Primary),
+            )
+        });
+
+        // We do not use self.clicked(), because we want to catch all clicks within our frame,
+        // even if we aren't clickable (or even enabled).
+        // This is important for windows and such that should close then the user clicks elsewhere.
+        double_clicked && self.is_over_layer(pointer_interact_pos)
+    }
+
+    fn is_over_layer(&self, pointer_interact_pos: Option<Pos2>) -> bool {
+        if self.contains_pointer() || self.hovered() {
+            true
+        } else if let Some(pos) = pointer_interact_pos {
+            let layer_under_pointer = self.ctx.layer_id_at(pos);
+            if layer_under_pointer != Some(self.layer_id) {
+                false
+            } else {
+                self.interact_rect.contains(pos)
+            }
+        } else {
+            false // clicked without a pointer, weird
+        }
+    }
+
+    /// MEMBRANE: detect clicks in the response rect even if it landed on a child widget.
+    /// Not entirely sure if this is the best way to do this.
     pub fn clicked_within_by(&self, button: PointerButton) -> bool {
         let (pointer_interact_pos, button_clicked) = self
             .ctx
@@ -304,22 +335,7 @@ impl Response {
         // We do not use self.clicked(), because we want to catch all clicks within our frame,
         // even if we aren't clickable (or even enabled).
         // This is important for windows and such that should close then the user clicks elsewhere.
-        if button_clicked {
-            if self.contains_pointer() || self.hovered() {
-                true
-            } else if let Some(pos) = pointer_interact_pos {
-                let layer_under_pointer = self.ctx.layer_id_at(pos);
-                if layer_under_pointer != Some(self.layer_id) {
-                    false
-                } else {
-                    self.interact_rect.contains(pos)
-                }
-            } else {
-                false // clicked without a pointer, weird
-            }
-        } else {
-            false
-        }
+        button_clicked && self.is_over_layer(pointer_interact_pos)
     }
 
     /// Was the widget enabled?
