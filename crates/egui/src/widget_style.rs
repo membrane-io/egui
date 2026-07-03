@@ -174,18 +174,47 @@ impl Style {
     pub fn checkbox_style(&self, classes: &Classes, state: WidgetState) -> CheckboxStyle {
         let visuals = self.visuals.widgets.state(state);
         let ws = self.widget_style(classes, state);
+
+        let mut checkbox_size = self.spacing.icon_width;
+        let mut check_size = self.spacing.icon_width_inner;
+        let mut checkbox_frame = Frame {
+            fill: visuals.bg_fill,
+            corner_radius: visuals.corner_radius,
+            stroke: visuals.bg_stroke,
+            ..Default::default()
+        };
+        let mut text_style = ws.text;
+        let mut check_stroke = ws.stroke;
+
+        if classes.has(CHECKBOX_ROUND_CLASS) {
+            checkbox_frame.corner_radius = (checkbox_size / 2.0).into();
+        }
+
+        if classes.has(CHECKBOX_LARGE_CLASS) {
+            checkbox_size *= 1.6;
+            check_size *= 1.4;
+            checkbox_frame.stroke =
+                Stroke::new(visuals.bg_stroke.width + 1.0, visuals.bg_stroke.color);
+            if classes.has(CHECKBOX_ROUND_CLASS) {
+                checkbox_frame.corner_radius = (checkbox_size / 2.0).into();
+            }
+        }
+
+        if classes.has(CHECKBOX_ACCENT_CLASS) {
+            let accent = self.visuals.warn_fg_color;
+            checkbox_frame.stroke = Stroke::new(2.0, accent);
+            checkbox_frame.fill = accent.gamma_multiply(0.15);
+            check_stroke = Stroke::new(2.0, accent);
+            text_style.color = accent;
+        }
+
         CheckboxStyle {
             frame: Frame::new(),
-            checkbox_size: self.spacing.icon_width,
-            check_size: self.spacing.icon_width_inner,
-            checkbox_frame: Frame {
-                fill: visuals.bg_fill,
-                corner_radius: visuals.corner_radius,
-                stroke: visuals.bg_stroke,
-                ..Default::default()
-            },
-            text_style: ws.text,
-            check_stroke: ws.stroke,
+            checkbox_size,
+            check_size,
+            checkbox_frame,
+            text_style,
+            check_stroke,
         }
     }
 
@@ -223,6 +252,15 @@ pub const ROOT_CLASS: &str = "root";
 
 /// The selected class is a special class present on selected [`crate::Button`].
 pub const SELECTED_CLASS: &str = "selected";
+
+/// Circular checkbox corners.
+pub const CHECKBOX_ROUND_CLASS: &str = "round";
+
+/// Larger checkbox and checkmark.
+pub const CHECKBOX_LARGE_CLASS: &str = "large";
+
+/// Accent-colored checkbox border, fill, and label.
+pub const CHECKBOX_ACCENT_CLASS: &str = "accent";
 
 /// A class is a static string identifier.
 pub type ClassName = Cow<'static, str>;
