@@ -3,7 +3,7 @@ use emath::Rect;
 use crate::{
     Atom, Atoms, IdSalt, IntoAtoms, NumExt as _, Response, Role, Sense, Shape, Ui, Vec2, Widget,
     WidgetAtom, WidgetInfo,
-    class::{Classes, HasClasses},
+    class::{ClassName, Classes, HasClasses},
     epaint, pos2,
     widget_style::CheckboxStyle,
 };
@@ -30,6 +30,15 @@ pub struct Checkbox<'a> {
 }
 
 impl<'a> Checkbox<'a> {
+    /// MEMBRANE: present on a checkbox with circular corners.
+    pub const CLASS_ROUND: ClassName = ClassName::from_static("membrane::checkbox_round");
+
+    /// MEMBRANE: present on a checkbox with a larger box and checkmark.
+    pub const CLASS_LARGE: ClassName = ClassName::from_static("membrane::checkbox_large");
+
+    /// MEMBRANE: present on a checkbox with an accent-colored border, fill and label.
+    pub const CLASS_ACCENT: ClassName = ClassName::from_static("membrane::checkbox_accent");
+
     pub fn new(checked: &'a mut bool, atoms: impl IntoAtoms<'a>) -> Self {
         Checkbox {
             checked,

@@ -1,8 +1,8 @@
 use emath::{Align2, Vec2};
-use epaint::{Color32, Margin};
+use epaint::{Color32, Margin, Stroke};
 
 use crate::{
-    Button, ComboBox, Context, Frame, TextEdit, TextStyle,
+    Button, Checkbox, ComboBox, Context, Frame, TextEdit, TextStyle,
     class::HasClasses as _,
     theme::StyleProvider,
     widget_style::{
@@ -171,34 +171,64 @@ impl StyleProvider<TextEditStyle> for DefaultStyle {
 
 impl StyleProvider<CheckboxStyle> for DefaultStyle {
     fn style(&mut self, modifiers: &StyleArgs<'_>) -> CheckboxStyle {
-        let StyleArgs { style, state, .. } = modifiers;
+        let StyleArgs {
+            classes,
+            style,
+            state,
+            ..
+        } = modifiers;
         let spacing = &style.spacing;
         let widget_visuals = *style.visuals.widgets.state(*state);
+
+        let mut checkbox_size = spacing.icon_width;
+        let mut check_size = spacing.icon_width_inner;
+        let mut checkbox_frame = Frame {
+            fill: widget_visuals.bg_fill,
+            // The box is small, so cap the rounding to keep it from looking like a radio button:
+            corner_radius: widget_visuals
+                .corner_radius
+                .at_most((0.3 * spacing.icon_width).round() as u8),
+            stroke: widget_visuals.bg_stroke,
+            ..Default::default()
+        };
+        let mut text_style =
+            TextVisuals::from_widget_visuals(style, TextStyle::Body, &widget_visuals);
+        let mut check_stroke = widget_visuals.fg_stroke;
+
+        // MEMBRANE: the round, large and accent checkbox classes.
+        if classes.has_class(&Checkbox::CLASS_LARGE) {
+            checkbox_size *= 1.6;
+            check_size *= 1.4;
+            checkbox_frame.stroke = Stroke::new(
+                widget_visuals.bg_stroke.width + 1.0,
+                widget_visuals.bg_stroke.color,
+            );
+        }
+
+        if classes.has_class(&Checkbox::CLASS_ROUND) {
+            checkbox_frame.corner_radius = (checkbox_size / 2.0).into();
+        }
+
+        if classes.has_class(&Checkbox::CLASS_ACCENT) {
+            let accent = style.visuals.warn_fg_color;
+            checkbox_frame.stroke = Stroke::new(2.0, accent);
+            checkbox_frame.fill = accent.gamma_multiply(0.15);
+            check_stroke = Stroke::new(2.0, accent);
+            text_style.color = accent;
+        }
 
         CheckboxStyle {
             atom_layout: AtomLayoutStyle {
                 min_size: Vec2::splat(spacing.interact_size.y),
                 gap: spacing.icon_spacing,
                 frame: Frame::new(),
-                text_style: TextVisuals::from_widget_visuals(
-                    style,
-                    TextStyle::Body,
-                    &widget_visuals,
-                ),
+                text_style,
                 ..Default::default()
             },
-            checkbox_size: spacing.icon_width,
-            check_size: spacing.icon_width_inner,
-            checkbox_frame: Frame {
-                fill: widget_visuals.bg_fill,
-                // The box is small, so cap the rounding to keep it from looking like a radio button:
-                corner_radius: widget_visuals
-                    .corner_radius
-                    .at_most((0.3 * spacing.icon_width).round() as u8),
-                stroke: widget_visuals.bg_stroke,
-                ..Default::default()
-            },
-            check_stroke: widget_visuals.fg_stroke,
+            checkbox_size,
+            check_size,
+            checkbox_frame,
+            check_stroke,
         }
     }
 }
