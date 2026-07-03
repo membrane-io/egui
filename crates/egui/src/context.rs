@@ -18,8 +18,8 @@ use crate::{
     Align2, CursorIcon, DeferredViewportUiCallback, FontDefinitions, Grid, Id, ImmediateViewport,
     ImmediateViewportRendererCallback, Key, KeyboardShortcut, Label, LayerId, Memory,
     ModifierNames, Modifiers, NumExt as _, Order, Painter, RawInput, Response, RichText,
-    SafeAreaInsets, ScrollArea, Sense, Style, TextStyle, TextureHandle, TextureOptions, Ui,
-    UiBuilder, ViewportBuilder, ViewportCommand, ViewportId, ViewportIdMap, ViewportIdPair,
+    SafeAreaInsets, ScrollArea, Sense, Separator, Style, TextStyle, TextureHandle, TextureOptions,
+    Ui, UiBuilder, ViewportBuilder, ViewportCommand, ViewportId, ViewportIdMap, ViewportIdPair,
     ViewportIdSet, ViewportOutput, Visuals, Widget as _, WidgetRect, WidgetText,
     animation_manager::AnimationManager,
     containers::{self, area::AreaState},
@@ -3568,16 +3568,67 @@ impl Context {
         ui.indent("layers", |ui| {
             ui.label("Layers, ordered back to front.");
             let layers_ids: Vec<LayerId> = self.memory(|mem| mem.areas().order().to_vec());
+            // MEMBRANE:
+            // - show triangle on layers requesting to be moved on top
+            // - show white dot on layers whose rect is under the pointer
+            // - show parent's layer
+            // - show whether interactable
+            let mut prev_order: Option<Order> = None;
             for layer_id in layers_ids {
                 if let Some(area) = AreaState::load(self, layer_id.id) {
-                    let is_visible = self.memory(|mem| mem.areas().is_visible(&layer_id));
+                    let (is_visible, parent, wants_to_be_on_top) = self.memory(|mem| {
+                        let areas = mem.areas();
+                        (
+                            areas.is_visible(&layer_id),
+                            areas.parent_layer(layer_id),
+                            areas.wants_to_be_on_top(&layer_id),
+                        )
+                    });
                     if !is_visible {
                         continue;
                     }
-                    let text = format!("{} - {:?}", layer_id.short_debug_format(), area.rect(),);
+                    if prev_order.is_some_and(|prev| prev != layer_id.order) {
+                        ui.add(Separator::default().horizontal().spacing(3.0));
+                    }
+                    prev_order = Some(layer_id.order);
+                    let mut text = format!("{} - {:?}", layer_id.short_debug_format(), area.rect());
+                    if let Some(parent) = parent {
+                        text += &format!(" parent: {}", parent.id.short_debug_format());
+                    }
+                    if !area.interactable {
+                        text += &format!(" non-interactable");
+                    }
                     // TODO(emilk): `Sense::hover_highlight()`
                     let response =
                         ui.add(Label::new(RichText::new(text).monospace()).sense(Sense::click()));
+                    let row = response.rect;
+                    let size = row.height() * 0.4;
+                    if wants_to_be_on_top {
+                        let center = Pos2::new(row.left() - size, row.center().y);
+                        let color = ui.visuals().warn_fg_color;
+                        ui.painter().add(epaint::Shape::convex_polygon(
+                            vec![
+                                center + vec2(-size * 0.5, -size * 0.5),
+                                center + vec2(size * 0.5, -size * 0.5),
+                                center + vec2(0.0, size * 0.5),
+                            ],
+                            color,
+                            epaint::Stroke::NONE,
+                        ));
+                    }
+                    // MEMBRANE: mark layers whose rect is under the pointer with a white dot.
+                    let transform = self.layer_transform_to_global(layer_id).unwrap_or_default();
+                    let global_rect = transform * area.rect();
+                    let pointer_inside = self
+                        .input(|i| i.pointer.hover_pos())
+                        .is_some_and(|pos| global_rect.contains(pos));
+                    if pointer_inside {
+                        ui.painter().circle_filled(
+                            Pos2::new(row.left() - size * 2.0, row.center().y),
+                            size * 0.5,
+                            Color32::WHITE,
+                        );
+                    }
                     if response.hovered() && is_visible {
                         // MEMBRANE: consider transform when showing layer rects.
                         let transform =

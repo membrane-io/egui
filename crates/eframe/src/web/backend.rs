@@ -1,10 +1,33 @@
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use egui::mutex::Mutex;
 
 use crate::epi;
 
 use super::percent_decode;
+
+/// Runtime override for the maximum repaint rate. `0` means "no override".
+///
+/// Lets debug tooling cap the frame rate at runtime, e.g. to make quick flickers observable.
+static DEBUG_MAX_FPS: AtomicU32 = AtomicU32::new(0);
+
+/// Override the maximum repaint rate at runtime. `None` (or `0`) clears the override and
+/// restores the rate configured in [`crate::WebOptions::max_fps`].
+///
+/// This only throttles scheduled repaints (animations, `request_repaint`); input events still
+/// repaint immediately so the UI stays responsive.
+pub fn set_debug_max_fps(max_fps: Option<u32>) {
+    DEBUG_MAX_FPS.store(max_fps.unwrap_or(0), Ordering::Relaxed);
+}
+
+/// The current runtime max-fps override, if any.
+pub fn debug_max_fps() -> Option<u32> {
+    match DEBUG_MAX_FPS.load(Ordering::Relaxed) {
+        0 => None,
+        fps => Some(fps),
+    }
+}
 
 // ----------------------------------------------------------------------------
 
@@ -115,10 +138,11 @@ impl NeedRepaint {
     }
 
     fn round_repaint_time_to_rate(&self, time: f64) -> f64 {
-        if self.max_fps == 0 {
+        let max_fps = debug_max_fps().unwrap_or(self.max_fps);
+        if max_fps == 0 {
             time
         } else {
-            let interval = 1.0 / self.max_fps as f64;
+            let interval = 1.0 / max_fps as f64;
             (time / interval).ceil() * interval
         }
     }

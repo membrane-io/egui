@@ -1357,6 +1357,11 @@ impl Areas {
             .copied()
     }
 
+    /// Whether this layer has requested to be moved to the top this frame.
+    pub fn wants_to_be_on_top(&self, layer_id: &LayerId) -> bool {
+        self.wants_to_be_on_top.contains(layer_id)
+    }
+
     /// If this layer is the sublayer of another layer, return the parent.
     pub fn parent_layer(&self, layer_id: LayerId) -> Option<LayerId> {
         self.sublayers.iter().find_map(|(parent, children)| {
