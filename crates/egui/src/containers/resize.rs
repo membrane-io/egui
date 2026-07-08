@@ -291,12 +291,8 @@ impl Resize {
             let corner_size = Vec2::splat(ui.visuals().resize_corner_size);
             let corner_pos = match self.drag_corner {
                 Align2::LEFT_TOP => pointer_pos - corner_size * 0.5,
-                Align2::LEFT_BOTTOM => {
-                    pointer_pos + vec2(-corner_size.x, corner_size.y) * 0.5
-                }
-                Align2::RIGHT_TOP => {
-                    pointer_pos + vec2(corner_size.x, -corner_size.y) * 0.5
-                }
+                Align2::LEFT_BOTTOM => pointer_pos + vec2(-corner_size.x, corner_size.y) * 0.5,
+                Align2::RIGHT_TOP => pointer_pos + vec2(corner_size.x, -corner_size.y) * 0.5,
                 Align2::RIGHT_BOTTOM => pointer_pos + corner_size * 0.5,
                 _ => panic!("Invalid corner alignment"),
             };
@@ -513,6 +509,7 @@ impl Resize {
 use emath::GuiRounding as _;
 use epaint::Stroke;
 
+#[allow(dead_code)]
 pub fn paint_resize_corner(ui: &Ui, response: &Response, corner: Align2) {
     let stroke = ui.style().interact(response).fg_stroke;
     paint_resize_corner_with_style(ui, &response.rect, stroke.color, corner);
