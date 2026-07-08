@@ -172,6 +172,7 @@ pub fn capture() -> String {
     formatted
 }
 
+#[allow(dead_code)]
 fn clean_symbol_name(mut s: String) -> String {
     // We get a hex suffix (at least on macOS) which is quite unhelpful,
     // e.g. `my_crate::my_function::h3bedd97b1e03baa5`.
@@ -200,6 +201,7 @@ fn test_clean_symbol_name() {
 /// * `/Users/emilk/.cargo/registry/src/github.com-1ecc6299db9ec823/tokio-1.24.1/src/runtime/runtime.rs`
 /// * `crates/rerun/src/main.rs`
 /// * `/rustc/d5a82bbd26e1ad8b7401f6a718a9c57c96905483/library/core/src/ops/function.rs`
+#[allow(dead_code)]
 fn shorten_source_file_path(path: &std::path::Path) -> String {
     // Look for `src` and strip everything up to it.
 
