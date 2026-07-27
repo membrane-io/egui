@@ -1593,7 +1593,7 @@ impl InputState {
             touch_states,
 
             wheel,
-            scroll_focus,
+            scroll_focus: _,
             smooth_scroll_delta,
             rotation_radians,
             zoom_factor_delta,

@@ -985,10 +985,12 @@ impl Context {
         self.write(move |ctx| writer(&mut ctx.memory.data))
     }
 
+    /// The id substring currently being searched for in the debug overlay.
     pub fn debug_id(&self) -> String {
         self.read(|ctx| ctx.id_search.clone())
     }
 
+    /// Set the id substring to search for in the debug overlay.
     pub fn set_debug_id(&self, debug_id: String) {
         self.write(|ctx| ctx.id_search = debug_id);
     }
