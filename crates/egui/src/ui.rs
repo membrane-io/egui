@@ -174,6 +174,7 @@ impl Ui {
             },
             true,
             Default::default(),
+            Some(&ui.style.spacing),
         );
 
         if disabled {
@@ -314,6 +315,7 @@ impl Ui {
             },
             true,
             Default::default(),
+            Some(&child_ui.style.spacing),
         );
 
         let role = accessibility_role.unwrap_or_else(|| {
@@ -731,8 +733,10 @@ impl Ui {
         self.placer.max_rect()
     }
 
-    /// Used for animation, kind of hacky
-    pub(crate) fn force_set_min_rect(&mut self, min_rect: Rect) {
+    /// Replaces the minimum rect, even if this shrinks the [`Ui`].
+    ///
+    /// This is primarily useful for animating layouts after their contents have been measured.
+    pub fn force_set_min_rect(&mut self, min_rect: Rect) {
         self.placer.force_set_min_rect(min_rect);
     }
 
@@ -974,6 +978,7 @@ impl Ui {
             },
             true,
             options,
+            Some(&self.style.spacing),
         )
     }
 
@@ -1119,6 +1124,7 @@ impl Ui {
             },
             false,
             Default::default(),
+            Some(&self.style.spacing),
         );
         if self.should_close() {
             response.set_close();

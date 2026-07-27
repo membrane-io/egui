@@ -1080,6 +1080,7 @@ fn do_resize_interaction(
                 // and the second time to move it to the top, above the window contents.
                 move_to_top: true,
             },
+            None,
         );
 
         // Named so a screen reader can tell the eight handles apart,
