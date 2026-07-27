@@ -1068,6 +1068,7 @@ fn do_resize_interaction(
                 // and the second time to move it to the top, above the window contents.
                 move_to_top: true,
             },
+            None,
         );
 
         response.widget_info(|| WidgetInfo::new(crate::WidgetType::ResizeHandle));

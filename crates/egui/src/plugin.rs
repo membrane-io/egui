@@ -45,10 +45,40 @@ pub trait Plugin: Send + Sync + std::any::Any + 'static {
 
     /// Called when a widget is created and is under the pointer.
     ///
+    /// `spacing` is the [`crate::Spacing`] of the [`Ui`] that created the widget, or the global
+    /// style's spacing when the widget was created without a [`Ui`].
+    ///
     /// Useful for capturing a stack trace so that widgets can be mapped back to their source code.
     /// Since this is called outside a pass, don't show ui here. Using `Context::debug_painter` is fine though.
     #[cfg(debug_assertions)]
-    fn on_widget_under_pointer(&mut self, ctx: &Context, widget: &crate::WidgetRect) {}
+    fn on_widget_under_pointer(
+        &mut self,
+        ctx: &Context,
+        widget: &crate::WidgetRect,
+        spacing: &crate::Spacing,
+    ) {
+    }
+
+    /// Called when the widget named by [`Context::set_probed_widget`] is created — from
+    /// *within* the call stack that creates it, and regardless of where the pointer is.
+    ///
+    /// This is [`Self::on_widget_under_pointer`] without the pointer: it lets a plugin keep a
+    /// probe alive on one chosen widget while the user's pointer is somewhere else entirely
+    /// (in the plugin's own UI, say, expanding a row or dragging a value). A tool that samples
+    /// the live call stack needs that — the stack is only readable from inside it, so the
+    /// sample has to be taken here, every frame, not deferred to the end of the pass.
+    ///
+    /// Unlike the other hooks you *may* show ui here: this is called mid-pass and the
+    /// [`Context`] is not locked. Doing so re-enters `create_widget`, and so re-enters this
+    /// hook — which terminates only because dispatch skips a plugin that is already locked.
+    #[cfg(debug_assertions)]
+    fn on_probed_widget(
+        &mut self,
+        ctx: &Context,
+        widget: &crate::WidgetRect,
+        spacing: &crate::Spacing,
+    ) {
+    }
 }
 
 pub(crate) struct PluginHandle {
@@ -193,10 +223,32 @@ impl PluginsOrdered {
     }
 
     #[cfg(debug_assertions)]
-    pub fn on_widget_under_pointer(&self, ctx: &Context, widget: &crate::WidgetRect) {
+    pub fn on_widget_under_pointer(
+        &self,
+        ctx: &Context,
+        widget: &crate::WidgetRect,
+        spacing: &crate::Spacing,
+    ) {
         profiling::scope!("plugins", "on_widget_under_pointer");
         self.for_each_dyn(true, |plugin| {
-            plugin.on_widget_under_pointer(ctx, widget);
+            plugin.on_widget_under_pointer(ctx, widget, spacing);
+        });
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn on_probed_widget(
+        &self,
+        ctx: &Context,
+        widget: &crate::WidgetRect,
+        spacing: &crate::Spacing,
+    ) {
+        profiling::scope!("plugins", "on_probed_widget");
+        // `skip_locked_plugins`, and load-bearing: a plugin's hook body here is expected to
+        // build widgets (that's the point — it draws its inspector from inside the probed
+        // widget's call stack), which re-enters this dispatch. Skipping the already-locked
+        // plugin is what makes that recursion terminate instead of deadlock.
+        self.for_each_dyn(true, |plugin| {
+            plugin.on_probed_widget(ctx, widget, spacing);
         });
     }
 }

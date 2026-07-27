@@ -151,6 +151,18 @@ bitflags::bitflags! {
 }
 
 impl Response {
+    pub fn debug(&self) {
+        self.debug_with_color(crate::Color32::RED, "");
+    }
+
+    pub fn debug_with_color(&self, color: crate::Color32, message: &str) {
+        self.ctx
+            .debug_painter()
+            .debug_rect(self.rect, color, message);
+    }
+}
+
+impl Response {
     /// The [`Id`] of the parent [`crate::Ui`] that hosts this widget.
     ///
     /// Looks up the [`WidgetRect`] from the current (or previous) pass.
@@ -844,6 +856,7 @@ impl Response {
             },
             true,
             Default::default(),
+            None,
         )
     }
 

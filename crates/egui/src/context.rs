@@ -377,6 +377,11 @@ struct ContextImpl {
     plugins: plugin::Plugins,
     safe_area: SafeAreaInsets,
 
+    /// MEMBRANE: the widget [`Plugin::on_probed_widget`] fires for. See
+    /// [`Context::set_probed_widget`].
+    #[cfg(debug_assertions)]
+    probed_widget: Option<Id>,
+
     /// All viewports share the same texture manager and texture namespace.
     ///
     /// In all viewports, [`TextureId::default`] is special, and points to the font atlas.
@@ -1199,12 +1204,19 @@ impl Context {
     ///
     /// `allow_focus` should usually be true, unless you call this function multiple times with the
     /// same widget, then `allow_focus` should only be true once (like in [`Ui::new`] (true) and [`Ui::remember_min_rect`] (false)).
+    ///
+    /// `spacing` is the [`crate::Spacing`] of the [`Ui`] creating the widget, if any. It's only
+    /// used for debug tooling (see [`crate::Plugin::on_widget_under_pointer`]); when `None`, the
+    /// global style's spacing is reported instead.
     pub fn create_widget(
         &self,
         w: WidgetRect,
         allow_focus: bool,
         options: crate::InteractOptions,
+        spacing: Option<&crate::Spacing>,
     ) -> Response {
+        #[cfg(not(debug_assertions))]
+        let _ = spacing;
         let interested_in_focus = w.enabled
             && w.sense.is_focusable()
             && self.memory(|mem| mem.allows_interaction(w.layer_id));
@@ -1236,9 +1248,32 @@ impl Context {
         let res = self.get_response(w);
 
         #[cfg(debug_assertions)]
-        if res.contains_pointer() {
-            let plugins = self.read(|ctx| ctx.plugins.ordered_plugins());
-            plugins.on_widget_under_pointer(self, &w);
+        {
+            let under_pointer = res.contains_pointer();
+            // MEMBRANE: a probed widget is sampled whether or not the pointer is on it, so a
+            // tool can keep reading its live call stack while the user works in the tool's own
+            // UI. Two hooks rather than one flag: "under the pointer" is what fills a picker's
+            // candidate list, "probed" runs one specific probe, and collapsing them would make
+            // the picker capture stacks for a widget the pointer isn't on.
+            let probed = self.read(|ctx| ctx.probed_widget) == Some(w.id);
+
+            if under_pointer || probed {
+                let plugins = self.read(|ctx| ctx.plugins.ordered_plugins());
+                let global_style;
+                let spacing = match spacing {
+                    Some(spacing) => spacing,
+                    None => {
+                        global_style = self.global_style();
+                        &global_style.spacing
+                    }
+                };
+                if under_pointer {
+                    plugins.on_widget_under_pointer(self, &w, spacing);
+                }
+                if probed {
+                    plugins.on_probed_widget(self, &w, spacing);
+                }
+            }
         }
 
         if allow_focus && w.sense.is_focusable() {
@@ -1998,6 +2033,23 @@ impl Context {
         self.with_plugin(|p: &mut crate::plugin::CallbackPlugin| {
             p.on_end_plugins.push((debug_name, cb));
         });
+    }
+
+    /// MEMBRANE: ask egui to call [`Plugin::on_probed_widget`] every time this widget is
+    /// created, whether or not the pointer is over it. `None` clears it.
+    ///
+    /// Debug-tooling only; a no-op in release, where the hook doesn't exist. Only one widget
+    /// can be probed at a time — a probe is something a *person* is pointing at, and the cost
+    /// of the hook is paid inside the widget's own construction.
+    #[cfg(debug_assertions)]
+    pub fn set_probed_widget(&self, id: Option<Id>) {
+        self.write(|ctx| ctx.probed_widget = id);
+    }
+
+    /// The widget set by [`Self::set_probed_widget`], if any.
+    #[cfg(debug_assertions)]
+    pub fn probed_widget(&self) -> Option<Id> {
+        self.read(|ctx| ctx.probed_widget)
     }
 
     /// Register a [`Plugin`](plugin::Plugin)
