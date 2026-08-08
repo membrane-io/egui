@@ -29,7 +29,13 @@ impl SvgLoader {
 }
 
 fn is_supported(uri: &str) -> bool {
-    egui::load::has_extension(uri, "svg")
+    if egui::load::has_extension(uri, "svg") {
+        return true;
+    }
+    // `data:` URIs carry the media type instead of an extension, e.g. `data:image/svg+xml,…`.
+    uri.strip_prefix("data:")
+        .and_then(|rest| rest.split(',').next())
+        .is_some_and(|media_type| media_type.contains("svg"))
 }
 
 impl Default for SvgLoader {
