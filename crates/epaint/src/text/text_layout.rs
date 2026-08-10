@@ -664,6 +664,8 @@ fn line_break(
     let mut first_row_indentation = paragraph.glyphs[0].pos.x;
     let mut row_start_x = paragraph.indentation;
     let mut row_start_idx = 0;
+    // Rows already placed by previous paragraphs; this paragraph's first row is the one at this index.
+    let rows_before_paragraph = out_rows.len();
 
     for i in 0..paragraph.glyphs.len() {
         if job.wrap.max_rows <= out_rows.len() {
@@ -695,17 +697,18 @@ fn line_break(
                 first_row_indentation = 0.0;
             } else if let Some(last_kept_index) = row_break_candidates.get(job.wrap.break_anywhere)
             {
-                // The first row was already indented when creating the Paragraph
-                let indentation = if out_rows.is_empty() {
+                // The paragraph's first row was already positioned when creating the Paragraph;
+                // only the wrapped rows that follow have to be moved to the indentation.
+                let x_offset = if out_rows.len() == rows_before_paragraph {
                     0.0
                 } else {
-                    paragraph.indentation
+                    paragraph.indentation - row_start_x
                 };
                 let glyphs: Vec<Glyph> = paragraph.glyphs[row_start_idx..=last_kept_index]
                     .iter()
                     .copied()
                     .map(|mut glyph| {
-                        glyph.pos.x += indentation - row_start_x;
+                        glyph.pos.x += x_offset;
                         glyph
                     })
                     .collect();
@@ -742,17 +745,18 @@ fn line_break(
         if job.wrap.max_rows <= out_rows.len() {
             *elided = true; // can't fit another row
         } else {
-            // The first row was already indented when creating the Paragraph
-            let indentation = if out_rows.is_empty() {
+            // The paragraph's first row was already positioned when creating the Paragraph;
+            // only the wrapped rows that follow have to be moved to the indentation.
+            let x_offset = if out_rows.len() == rows_before_paragraph {
                 0.0
             } else {
-                paragraph.indentation
+                paragraph.indentation - row_start_x
             };
             let glyphs: Vec<Glyph> = paragraph.glyphs[row_start_idx..]
                 .iter()
                 .copied()
                 .map(|mut glyph| {
-                    glyph.pos.x += indentation - row_start_x;
+                    glyph.pos.x += x_offset;
                     glyph
                 })
                 .collect();
@@ -1034,11 +1038,9 @@ fn galley_from_rows(
         num_indices += row.visuals.mesh.indices.len();
 
         row.section_index_at_start = u32::MAX; // No longer in use.
-
-        // MEMBRANE: Keep these values since we use them to render Markdown
-        // for glyph in &mut row.glyphs {
-        //     glyph.section_index = u32::MAX; // No longer in use.
-        // }
+        for glyph in &mut row.glyphs {
+            glyph.section_index = u32::MAX; // No longer in use.
+        }
     }
 
     let mut galley = Galley {
