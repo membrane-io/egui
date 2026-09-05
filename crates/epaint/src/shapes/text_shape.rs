@@ -129,9 +129,16 @@ impl TextShape {
             mesh_bounds,
             num_vertices: _,
             num_indices: _,
-            pixels_per_point: _,
+            pixels_per_point,
             intrinsic_size,
         } = Arc::make_mut(galley);
+
+        // MEMBRANE: the transform moves the galley into a space that is `scaling` times larger, so
+        // one point of that space covers `scaling` times fewer physical pixels. The tessellator
+        // compares this value against its own, so it must follow the transform.
+        if transform.scaling != 0.0 {
+            *pixels_per_point /= transform.scaling;
+        }
 
         *rect = transform.scaling * *rect;
         *mesh_bounds = transform.scaling * *mesh_bounds;

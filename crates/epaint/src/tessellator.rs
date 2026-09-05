@@ -1493,6 +1493,10 @@ pub struct Tessellator {
     options: TessellationOptions,
     font_tex_size: [usize; 2],
 
+    /// MEMBRANE: true after the pixels-per-point warning fired, so it fires once for each call to
+    /// [`Self::tessellate_shapes`] instead of once for each text shape.
+    reported_pixels_per_point_mismatch: bool,
+
     /// See [`crate::TextureAtlas::prepared_discs`].
     prepared_discs: Vec<PreparedDisc>,
 
@@ -1530,6 +1534,7 @@ impl Tessellator {
             pixels_per_point,
             options,
             font_tex_size,
+            reported_pixels_per_point_mismatch: false,
             prepared_discs,
             feathering,
             clip_rect: Rect::EVERYTHING,
@@ -2198,10 +2203,19 @@ impl Tessellator {
             return;
         }
 
-        if galley.pixels_per_point != self.pixels_per_point {
+        // MEMBRANE: a relative tolerance, and one report for each call to `tessellate_shapes`.
+        // A layer that a transform scales rounds its layout pixels per point to a small set of
+        // values, so a few percent of difference is by design. See `TextShape::transform`.
+        if !self.reported_pixels_per_point_mismatch
+            && (galley.pixels_per_point - self.pixels_per_point).abs() > 0.1 * self.pixels_per_point
+        {
+            self.reported_pixels_per_point_mismatch = true;
             log::warn!(
-                "epaint: WARNING: pixels_per_point (dpi scale) have changed between text layout and tessellation. \
-                       You must recreate your text shapes if pixels_per_point changes."
+                "epaint: WARNING: the text was laid out for {} pixels per point and is painted at {}. \
+                 Recreate the text shapes when pixels_per_point changes, or scope the layout value \
+                 to the scale of the layer.",
+                galley.pixels_per_point,
+                self.pixels_per_point
             );
         }
 
@@ -2408,6 +2422,8 @@ impl Tessellator {
     #[allow(clippy::allow_attributes, unused_mut)]
     pub fn tessellate_shapes(&mut self, mut shapes: Vec<ClippedShape>) -> Vec<ClippedPrimitive> {
         profiling::function_scope!();
+
+        self.reported_pixels_per_point_mismatch = false;
 
         #[cfg(feature = "rayon")]
         if self.options.parallel_tessellation {

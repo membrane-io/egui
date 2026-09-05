@@ -371,6 +371,11 @@ struct ContextImpl {
     /// MEMBRANE: increased each time the font atlas changes so we can drop any cached galleys.
     font_generation: usize,
 
+    /// MEMBRANE: the stack that [`Context::scoped_pixels_per_point`] pushes to. The top value is
+    /// the `pixels_per_point` that text layout and pixel snapping use. See
+    /// [`Context::layout_pixels_per_point`].
+    layout_pixels_per_point_stack: Vec<f32>,
+
     memory: Memory,
     animation_manager: AnimationManager,
 
@@ -434,6 +439,9 @@ impl ContextImpl {
         if let Some(safe_area) = new_raw_input.safe_area_insets {
             self.safe_area = safe_area;
         }
+
+        // MEMBRANE: a guard that a panic skipped must not leak into the next pass.
+        self.layout_pixels_per_point_stack.clear();
 
         let is_outermost_viewport = self.viewport_stack.is_empty(); // not necessarily root, just outermost immediate viewport
         self.viewport_stack.push(ids);
@@ -637,6 +645,16 @@ impl ContextImpl {
 
     fn pixels_per_point(&mut self) -> f32 {
         self.viewport().input.pixels_per_point
+    }
+
+    /// MEMBRANE: the `pixels_per_point` that text layout and pixel snapping use.
+    ///
+    /// This is [`Self::pixels_per_point`] unless a [`PixelsPerPointGuard`] is active.
+    fn layout_pixels_per_point(&mut self) -> f32 {
+        match self.layout_pixels_per_point_stack.last() {
+            Some(&pixels_per_point) => pixels_per_point,
+            None => self.pixels_per_point(),
+        }
     }
 
     /// Return the `ViewportId` of the current viewport.
@@ -1057,7 +1075,9 @@ impl Context {
     #[inline]
     pub fn fonts<R>(&self, reader: impl FnOnce(&FontsView<'_>) -> R) -> R {
         self.write(move |ctx| {
-            let pixels_per_point = ctx.pixels_per_point();
+            // MEMBRANE: `layout_pixels_per_point`, not `pixels_per_point`, so a scaled-down layer
+            // rasterizes its glyphs at the size they actually appear on screen.
+            let pixels_per_point = ctx.layout_pixels_per_point();
             reader(
                 &ctx.fonts
                     .as_mut()
@@ -1074,7 +1094,8 @@ impl Context {
     #[inline]
     pub fn fonts_mut<R>(&self, reader: impl FnOnce(&mut FontsView<'_>) -> R) -> R {
         self.write(move |ctx| {
-            let pixels_per_point = ctx.pixels_per_point();
+            // MEMBRANE: see the comment in `Context::fonts`.
+            let pixels_per_point = ctx.layout_pixels_per_point();
             reader(
                 &mut ctx
                     .fonts
@@ -2310,6 +2331,36 @@ impl Context {
         self.input(|i| i.pixels_per_point)
     }
 
+    /// MEMBRANE: the number of physical pixels for each logical point of the layer that renders
+    /// now.
+    ///
+    /// This equals [`Self::pixels_per_point`] unless a [`PixelsPerPointGuard`] is active. Text
+    /// layout, [`crate::Painter`] and [`crate::Ui::pixels_per_point`] read this value, so a
+    /// scaled-down layer rasterizes its glyphs and snaps its geometry for the size it gets on
+    /// screen.
+    ///
+    /// Read [`Self::pixels_per_point`] instead for anything in global space: a pointer position,
+    /// the viewport size, a texture size hint, or a rectangle that a layer transform already moved.
+    pub fn layout_pixels_per_point(&self) -> f32 {
+        self.write(|ctx| ctx.layout_pixels_per_point())
+    }
+
+    /// MEMBRANE: set [`Self::layout_pixels_per_point`] until the returned guard drops.
+    ///
+    /// Use this around a UI that a layer transform scales. Pass the absolute value, which is
+    /// [`Self::pixels_per_point`] times the scale of the layer.
+    #[must_use = "the scope ends when the guard drops"]
+    pub fn scoped_pixels_per_point(&self, pixels_per_point: f32) -> PixelsPerPointGuard {
+        debug_assert!(
+            0.0 < pixels_per_point && pixels_per_point.is_finite(),
+            "Bad pixels_per_point {pixels_per_point}"
+        );
+        self.write(|ctx| {
+            ctx.layout_pixels_per_point_stack.push(pixels_per_point);
+        });
+        PixelsPerPointGuard { ctx: self.clone() }
+    }
+
     /// Set the number of physical pixels for each logical point.
     /// Will become active at the start of the next pass.
     ///
@@ -2675,6 +2726,11 @@ impl Context {
 
 impl ContextImpl {
     fn end_pass(&mut self) -> FullOutput {
+        debug_assert!(
+            self.layout_pixels_per_point_stack.is_empty(),
+            "A PixelsPerPointGuard outlived the pass"
+        );
+
         let ended_viewport_id = self.viewport_id();
         let viewport = self.viewports.entry(ended_viewport_id).or_default();
         let pixels_per_point = viewport.input.pixels_per_point;
@@ -4456,9 +4512,26 @@ fn warn_if_rect_changes_id(
     }
 }
 
+/// MEMBRANE: keeps [`Context::layout_pixels_per_point`] at a value until it drops.
+///
+/// [`Context::scoped_pixels_per_point`] and [`Context::scoped_pixels_per_point_for_layer`] create
+/// one.
+pub struct PixelsPerPointGuard {
+    ctx: Context,
+}
+
+impl Drop for PixelsPerPointGuard {
+    fn drop(&mut self) {
+        let popped = self
+            .ctx
+            .write(|ctx| ctx.layout_pixels_per_point_stack.pop());
+        debug_assert!(popped.is_some(), "The pixels-per-point stack was empty");
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use super::Context;
+    use super::{Color32, Context, Pos2, Ui, emath, epaint};
 
     #[test]
     fn test_single_pass() {
@@ -4597,5 +4670,84 @@ mod test {
                 "The request should have been cleared when fulfilled"
             );
         }
+    }
+
+    /// MEMBRANE: a scope changes the pixels per point that text layout uses, so a scaled-down layer
+    /// gets glyphs rasterized for the size it appears at.
+    #[test]
+    fn scoped_pixels_per_point_changes_the_galley() {
+        let ctx = Context::default();
+        ctx.set_pixels_per_point(2.0);
+
+        // The first pass loads the fonts.
+        let _ = ctx.run_ui(Default::default(), |_| {});
+
+        let mut result = None;
+        let _ = ctx.run_ui(Default::default(), |ui| {
+            let layout = |ui: &Ui| {
+                ui.ctx().fonts_mut(|f| {
+                    f.layout_no_wrap(
+                        "Sharp text".to_owned(),
+                        crate::FontId::proportional(14.0),
+                        Color32::WHITE,
+                    )
+                })
+            };
+
+            let plain = layout(ui);
+            let scaled = {
+                let _scope = ui.ctx().scoped_pixels_per_point(1.0);
+                assert_eq!(ui.ctx().layout_pixels_per_point(), 1.0);
+                assert_eq!(
+                    ui.ctx().pixels_per_point(),
+                    2.0,
+                    "The scope must not change the global value"
+                );
+                layout(ui)
+            };
+            assert_eq!(
+                ui.ctx().layout_pixels_per_point(),
+                2.0,
+                "The scope must pop"
+            );
+            let plain_again = layout(ui);
+            result = Some((plain, scaled, plain_again));
+        });
+
+        let (plain, scaled, plain_again) = result.expect("the closure runs");
+        assert_eq!(plain.pixels_per_point, 2.0);
+        assert_eq!(scaled.pixels_per_point, 1.0);
+        assert_eq!(plain_again.pixels_per_point, 2.0);
+        assert!(
+            std::sync::Arc::ptr_eq(&plain, &plain_again),
+            "Two galleys at the same pixels per point come from the cache"
+        );
+    }
+
+    /// MEMBRANE: after the layer transform scales a text shape, its galley reports the pixels per
+    /// point of the space it now lives in. The tessellator compares that value against its own.
+    #[test]
+    fn transform_updates_the_galley_pixels_per_point() {
+        let ctx = Context::default();
+
+        // A layer at scale 0.5 lays its text out at half the global pixels per point.
+        ctx.set_pixels_per_point(1.0);
+        let _ = ctx.run_ui(Default::default(), |_| {});
+
+        let galley = ctx.fonts_mut(|f| {
+            f.layout_no_wrap(
+                "Sharp text".to_owned(),
+                crate::FontId::proportional(14.0),
+                Color32::WHITE,
+            )
+        });
+        assert_eq!(galley.pixels_per_point, 1.0);
+
+        let mut shape = epaint::TextShape::new(Pos2::ZERO, galley, Color32::WHITE);
+        shape.transform(emath::TSTransform::from_scaling(0.5));
+        assert_eq!(
+            shape.galley.pixels_per_point, 2.0,
+            "One point of the global space now covers twice as many physical pixels"
+        );
     }
 }
