@@ -3,8 +3,8 @@ use std::sync::Arc;
 use emath::TSTransform;
 
 use crate::{
-    Context, CursorIcon, Event, Galley, Id, LayerId, Plugin, Pos2, Rect, Response, Ui,
-    Vec2, ViewportIdMap, layers::ShapeIdx, text::CCursor, text_selection::CCursorRange,
+    Context, CursorIcon, Event, Galley, Id, LayerId, Plugin, Pos2, Rect, Response, Ui, Vec2,
+    ViewportIdMap, layers::ShapeIdx, text::CCursor, text_selection::CCursorRange,
 };
 
 use super::{
@@ -658,7 +658,7 @@ impl ViewportLabelSelectionState {
                 let primary_changed = old_primary.is_none_or(|old| {
                     old.widget_id != new_primary.widget_id || old.ccursor != new_primary.ccursor
                 });
- 
+
                 // TODO: During pointer-based selection we only scroll the area containing the secondary cursor.
                 // This matches the behavior of browsers, except for the fact that we don't allow scroll_to_rect to
                 // bubble up beyond the first ScrollArea which prevents the grandparent from scrolling.

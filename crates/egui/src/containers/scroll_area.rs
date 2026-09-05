@@ -1218,7 +1218,6 @@ impl Prepared {
             && ui.ctx().dragged_id().is_none()
             || is_dragging_background;
 
-
         let scroll_focus = ui.ctx().input_mut(|input| input.scroll_focus);
         let someone_else_scrolling = scroll_focus.is_some_and(|(other_id, _)| other_id != id);
 

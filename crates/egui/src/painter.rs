@@ -45,7 +45,9 @@ pub struct Painter {
 impl Painter {
     /// Create a painter to a specific layer within a certain clip rectangle.
     pub fn new(ctx: Context, layer_id: LayerId, clip_rect: Rect) -> Self {
-        let pixels_per_point = ctx.pixels_per_point();
+        // MEMBRANE: a painter paints into one layer, so it snaps geometry with the value of that
+        // layer. See `Context::layout_pixels_per_point`.
+        let pixels_per_point = ctx.layout_pixels_per_point();
         Self {
             ctx,
             pixels_per_point,
@@ -135,7 +137,10 @@ impl Painter {
         &self.ctx
     }
 
-    /// Number of physical pixels for each logical UI point.
+    /// Number of physical pixels for each logical UI point of the layer this painter paints into.
+    ///
+    /// MEMBRANE: this is [`Context::layout_pixels_per_point`], which differs from
+    /// [`Context::pixels_per_point`] inside a [`crate::PixelsPerPointGuard`] scope.
     #[inline]
     pub fn pixels_per_point(&self) -> f32 {
         self.pixels_per_point

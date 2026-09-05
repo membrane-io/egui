@@ -489,7 +489,7 @@ pub use self::{
         menu::{self, MenuBar},
         modal, panel, scroll_area,
     },
-    context::{Context, RepaintCause, RequestRepaintInfo},
+    context::{Context, PixelsPerPointGuard, RepaintCause, RequestRepaintInfo},
     data::{
         Key, ScreenshotCallback,
         input::{
