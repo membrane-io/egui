@@ -372,7 +372,10 @@ impl<'a> Image<'a> {
 
         // Load exactly the size of the rectangle we are painting to.
         // This is important for getting crisp SVG:s.
-        let pixel_size = (pixels_per_point * rect.size()).round();
+        // MEMBRANE: the global value, not the layer value. `SizeHint` is part of the texture cache
+        // key, and that cache never drops an entry. A scaled-down layer therefore oversamples its
+        // images instead of adding one more texture for each scale.
+        let pixel_size = (ui.ctx().pixels_per_point() * rect.size()).round();
 
         let texture = self.source(ui.ctx()).clone().load(
             ui.ctx(),
