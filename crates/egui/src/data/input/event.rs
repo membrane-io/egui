@@ -33,6 +33,12 @@ pub enum Event {
     /// [`Self::Paste`] still takes priority when both are available.
     PasteImage(std::sync::Arc<ColorImage>),
 
+    /// MEMBRANE: the web integration detected an image on the clipboard (e.g. a screenshot paste).
+    ///
+    /// It carries the encoded bytes and the MIME type, not a decoded [`ColorImage`], so that the
+    /// app can send the image on without a decode and a new encode.
+    PasteImageBytes { bytes: Vec<u8>, mime: String },
+
     /// Text input, e.g. via keyboard.
     ///
     /// When the user presses enter/return, do not send a [`Text`](Event::Text) (just [`Key::Enter`]).
