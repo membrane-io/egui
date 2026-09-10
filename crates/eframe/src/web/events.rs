@@ -353,36 +353,80 @@ pub(crate) fn on_keyup(event: web_sys::KeyboardEvent, runner: &mut AppRunner) {
 }
 
 fn install_copy_cut_paste(runner_ref: &WebRunner, target: &EventTarget) -> Result<(), JsValue> {
-    runner_ref.add_event_listener(target, "paste", |event: web_sys::ClipboardEvent, runner| {
-        if !runner.input.raw.focused {
-            return; // The eframe app is not interested
-        }
-
-        if let Some(data) = event.clipboard_data()
-            && let Ok(text) = data.get_data("text")
-        {
-            let text = text.replace("\r\n", "\n");
-
-            let mut should_stop_propagation = true;
-            let mut should_prevent_default = true;
-            if !text.is_empty() {
-                let egui_event = egui::Event::Paste(text);
-                should_stop_propagation = (runner.web_options.should_stop_propagation)(&egui_event);
-                should_prevent_default = (runner.web_options.should_prevent_default)(&egui_event);
-                runner.input.raw.events.push(egui_event);
-                runner.needs_repaint.repaint_asap();
+    let paste_runner = runner_ref.clone();
+    runner_ref.add_event_listener(
+        target,
+        "paste",
+        move |event: web_sys::ClipboardEvent, runner| {
+            if !runner.input.raw.focused {
+                return; // The eframe app is not interested
             }
 
-            // Use web options to tell if the web event should be propagated to parent elements based on the egui event.
+            let Some(data) = event.clipboard_data() else {
+                return;
+            };
+
+            let mut should_stop_propagation = false;
+            let mut should_prevent_default = false;
+
+            let items = data.items();
+            for i in 0..items.length() {
+                let Some(item) = items.get(i) else {
+                    continue;
+                };
+                let mime = item.type_();
+                if !mime.starts_with("image/") {
+                    continue;
+                }
+                let Ok(Some(file)) = item.get_as_file() else {
+                    continue;
+                };
+                let mime = if mime.is_empty() { file.type_() } else { mime };
+                let future = wasm_bindgen_futures::JsFuture::from(file.array_buffer());
+                let runner_ref = paste_runner.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    match future.await {
+                        Ok(array_buffer) => {
+                            let bytes = js_sys::Uint8Array::new(&array_buffer).to_vec();
+                            if let Some(mut runner_lock) = runner_ref.try_lock() {
+                                let egui_event = egui::Event::PasteImage { bytes, mime };
+                                runner_lock.input.raw.events.push(egui_event);
+                                runner_lock.needs_repaint.repaint_asap();
+                            }
+                        }
+                        Err(err) => {
+                            log::error!(
+                                "Failed to read pasted image: {}",
+                                string_from_js_value(&err)
+                            );
+                        }
+                    }
+                });
+                should_stop_propagation = true;
+                should_prevent_default = true;
+            }
+
+            if let Ok(text) = data.get_data("text") {
+                let text = text.replace("\r\n", "\n");
+                if !text.is_empty() {
+                    let egui_event = egui::Event::Paste(text);
+                    should_stop_propagation =
+                        (runner.web_options.should_stop_propagation)(&egui_event);
+                    should_prevent_default =
+                        (runner.web_options.should_prevent_default)(&egui_event);
+                    runner.input.raw.events.push(egui_event);
+                    runner.needs_repaint.repaint_asap();
+                }
+            }
+
             if should_stop_propagation {
                 event.stop_propagation();
             }
-
             if should_prevent_default {
                 event.prevent_default();
             }
-        }
-    })?;
+        },
+    )?;
 
     runner_ref.add_event_listener(target, "cut", |event: web_sys::ClipboardEvent, runner| {
         if !runner.input.raw.focused {

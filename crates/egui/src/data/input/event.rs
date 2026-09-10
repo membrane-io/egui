@@ -24,6 +24,9 @@ pub enum Event {
     /// The integration detected a "paste" event (e.g. Cmd+V).
     Paste(String),
 
+    /// The integration detected an image on the clipboard (e.g. a screenshot paste).
+    PasteImage { bytes: Vec<u8>, mime: String },
+
     /// Text input, e.g. via keyboard.
     ///
     /// When the user presses enter/return, do not send a [`Text`](Event::Text) (just [`Key::Enter`]).

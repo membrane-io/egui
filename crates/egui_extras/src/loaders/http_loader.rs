@@ -78,6 +78,10 @@ impl BytesLoader for EhttpLoader {
         // if !starts_with_one_of(uri, PROTOCOLS) {
         //     return Err(LoadError::NotSupported);
         // }
+        // `bytes://` is in-memory (`Context::include_bytes`); fetching it as HTTP always fails.
+        if uri.starts_with("bytes://") {
+            return Err(LoadError::NotSupported);
+        }
 
         let mut cache = self.cache.lock();
         if let Some(entry) = cache.get(uri).cloned() {
