@@ -25,10 +25,7 @@ pub enum Event {
     Paste(String),
 
     /// The integration detected an image on the clipboard (e.g. a screenshot paste).
-    PasteImage {
-        bytes: Vec<u8>,
-        mime: String,
-    },
+    PasteImage { bytes: Vec<u8>, mime: String },
 
     /// Text input, e.g. via keyboard.
     ///
