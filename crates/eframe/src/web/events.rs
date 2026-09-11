@@ -410,9 +410,12 @@ fn install_copy_cut_paste(runner_ref: &WebRunner, target: &EventTarget) -> Resul
                 let text = text.replace("\r\n", "\n");
                 if !text.is_empty() {
                     let egui_event = egui::Event::Paste(text);
-                    should_stop_propagation =
+                    // MEMBRANE: fold the text decision in rather than replacing it. A clipboard with an
+                    // image on it usually carries text too, and assigning here threw away the image's
+                    // claim on the event whenever the host's callbacks said no to the text.
+                    should_stop_propagation |=
                         (runner.web_options.should_stop_propagation)(&egui_event);
-                    should_prevent_default =
+                    should_prevent_default |=
                         (runner.web_options.should_prevent_default)(&egui_event);
                     runner.input.raw.events.push(egui_event);
                     runner.needs_repaint.repaint_asap();
