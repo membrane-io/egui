@@ -559,6 +559,14 @@ pub struct TextFormat {
     /// Default: 0.0 (no rounding)
     pub bg_corner_radius: u8,
 
+    /// Border drawn inside the edge of a background rectangle.
+    ///
+    /// The background rectangle takes the stroke colour, and the fill sits inside it, so the
+    /// border follows `bg_corner_radius`. A fill that is not opaque lets the stroke colour through.
+    ///
+    /// Default: [`Stroke::NONE`] (no border)
+    pub bg_stroke: Stroke,
+
     pub italics: bool,
 
     pub underline: Stroke,
@@ -589,6 +597,7 @@ impl Default for TextFormat {
             expand_bg: Vec2::new(1.0, 1.0),
             coords: VariationCoords::default(),
             bg_corner_radius: 0,
+            bg_stroke: Stroke::NONE,
             italics: false,
             underline: Stroke::NONE,
             strikethrough: Stroke::NONE,
@@ -609,6 +618,7 @@ impl core::hash::Hash for TextFormat {
             expand_bg,
             coords,
             bg_corner_radius,
+            bg_stroke,
             italics,
             underline,
             strikethrough,
@@ -625,6 +635,7 @@ impl core::hash::Hash for TextFormat {
         emath::OrderedFloat(expand_bg.y).hash(state);
         coords.hash(state);
         bg_corner_radius.hash(state);
+        bg_stroke.hash(state);
         italics.hash(state);
         underline.hash(state);
         strikethrough.hash(state);
