@@ -590,6 +590,16 @@ impl<'a> Popup<'a> {
             frame.show(ui, content).inner
         });
 
+        // MEMBRANE: keep the popup above the layer that anchors it.
+        //
+        // An `Area` asks for the top of its order only on the pass that makes it visible. A host
+        // layer that asks on every pass, such as a Membrane popover, therefore paints over a popup
+        // that its own content opened. A sublayer states the relationship once, and the end of the
+        // pass sorts the popup above its host whatever either layer asked for.
+        if layer_id.order == kind.order() && layer_id != response.response.layer_id {
+            ctx.set_sublayer(layer_id, response.response.layer_id);
+        }
+
         // If the popup was just opened with a click, we don't want to immediately close it again.
         let close_click = was_open_last_frame && ctx.input(|i| i.pointer.any_click());
 
