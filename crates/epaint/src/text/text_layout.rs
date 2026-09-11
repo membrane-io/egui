@@ -1138,12 +1138,25 @@ fn add_row_backgrounds(point_scale: PointScale, job: &LayoutJob, row: &Row, mesh
         return;
     }
 
-    let mut end_run = |start: Option<(Color32, Rect, Vec2, u8)>, stop_x: f32| {
-        if let Some((color, start_rect, expand, corner_radius)) = start {
+    let mut end_run = |start: Option<(Color32, Rect, Vec2, u8, Stroke)>, stop_x: f32| {
+        if let Some((color, start_rect, expand, corner_radius, stroke)) = start {
             let rect = Rect::from_min_max(start_rect.left_top(), pos2(stop_x, start_rect.bottom()));
             let rect = rect.expand2(expand);
             let rect = rect.round_to_pixels(point_scale.pixels_per_point());
-            mesh.add_colored_rect_with_corners(rect, corner_radius, color);
+            if stroke.is_empty() {
+                mesh.add_colored_rect_with_corners(rect, corner_radius, color);
+                return;
+            }
+            // A `Mesh` holds triangles and cannot stroke an outline, so the border is the
+            // background rectangle in the stroke colour with the fill inset inside it. That keeps
+            // the corners rounded, which four separate edge rectangles would not.
+            let width = point_scale.round_to_pixel(stroke.width);
+            mesh.add_colored_rect_with_corners(rect, corner_radius, stroke.color);
+            let inner = rect.shrink(width);
+            if inner.is_positive() {
+                let inner_radius = corner_radius.saturating_sub(width as u8);
+                mesh.add_colored_rect_with_corners(inner, inner_radius, color);
+            }
         }
     };
 
@@ -1157,20 +1170,33 @@ fn add_row_backgrounds(point_scale: PointScale, job: &LayoutJob, row: &Row, mesh
 
         if color == Color32::TRANSPARENT {
             end_run(run_start.take(), last_rect.right());
-        } else if let Some((existing_color, start, expand, corner_radius)) = run_start {
+        } else if let Some((existing_color, start, expand, corner_radius, stroke)) = run_start {
             if existing_color == color
                 && start.top() == rect.top()
                 && start.bottom() == rect.bottom()
                 && format.expand_bg == expand
                 && format.bg_corner_radius == corner_radius
+                && format.bg_stroke == stroke
             {
                 // continue the same background rectangle
             } else {
                 end_run(run_start.take(), last_rect.right());
-                run_start = Some((color, rect, format.expand_bg, format.bg_corner_radius));
+                run_start = Some((
+                    color,
+                    rect,
+                    format.expand_bg,
+                    format.bg_corner_radius,
+                    format.bg_stroke,
+                ));
             }
         } else {
-            run_start = Some((color, rect, format.expand_bg, format.bg_corner_radius));
+            run_start = Some((
+                color,
+                rect,
+                format.expand_bg,
+                format.bg_corner_radius,
+                format.bg_stroke,
+            ));
         }
 
         last_rect = rect;

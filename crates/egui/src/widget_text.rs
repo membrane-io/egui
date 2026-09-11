@@ -471,6 +471,7 @@ impl RichText {
                 background: background_color,
                 coords,
                 bg_corner_radius: 0,
+                bg_stroke: crate::Stroke::NONE,
                 italics,
                 underline,
                 strikethrough,
