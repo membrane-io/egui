@@ -478,6 +478,13 @@ impl Painter {
             .or_else(|| self.root_framebuffer.lock().ok().and_then(|root| *root))
     }
 
+    /// Return the number of active egui render targets.
+    pub fn render_target_depth(&self) -> usize {
+        self.render_targets
+            .lock()
+            .map_or(0, |targets| targets.len())
+    }
+
     /// Bind the active egui render target.
     ///
     /// This method also restores an external framebuffer that a web integration provided.
@@ -586,6 +593,9 @@ impl Painter {
 
         unsafe {
             target.parent_state.restore(self);
+            if target.parent_state.program == Some(self.program) {
+                self.prepare_painting(target.parent_screen_size_px, target.pixels_per_point);
+            }
         }
         let parent = self.paint_target(target.parent_screen_size_px);
         let mut scissor = clip_rect_to_scissor(
