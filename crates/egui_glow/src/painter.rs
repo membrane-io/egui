@@ -1,10 +1,14 @@
 #![expect(clippy::unwrap_used)]
 #![expect(unsafe_code)]
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use egui::{
-    emath::Rect,
+    Color32, TextureId,
+    emath::{Pos2, Rect, pos2},
     epaint::{Mesh, PaintCallbackInfo, Primitive, Vertex},
 };
 use glow::HasContext as _;
@@ -86,6 +90,7 @@ pub struct Painter {
 
     program: glow::Program,
     u_screen_size: glow::UniformLocation,
+    u_screen_origin: glow::UniformLocation,
     u_sampler: glow::UniformLocation,
     is_webgl_1: bool,
     vao: crate::vao::VertexArrayObject,
@@ -101,8 +106,26 @@ pub struct Painter {
     /// Stores outdated OpenGL textures that are yet to be deleted
     textures_to_destroy: Vec<glow::Texture>,
 
+    render_targets: Mutex<Vec<RenderTarget>>,
+
     /// Used to make sure we are destroyed correctly.
     destroyed: bool,
+}
+
+#[derive(Clone, Copy)]
+struct RenderTarget {
+    framebuffer: glow::Framebuffer,
+    rect: Rect,
+    screen_size_px: [u32; 2],
+    parent_screen_size_px: [u32; 2],
+    pixels_per_point: f32,
+}
+
+#[derive(Clone, Copy)]
+struct PaintTarget {
+    framebuffer: Option<glow::Framebuffer>,
+    origin: Pos2,
+    screen_size_px: [u32; 2],
 }
 
 /// A callback function that can be used to compose an [`egui::PaintCallback`] for custom rendering
@@ -213,6 +236,7 @@ impl Painter {
             gl.delete_shader(vert);
             gl.delete_shader(frag);
             let u_screen_size = gl.get_uniform_location(program, "u_screen_size").unwrap();
+            let u_screen_origin = gl.get_uniform_location(program, "u_screen_origin").unwrap();
             let u_sampler = gl.get_uniform_location(program, "u_sampler").unwrap();
 
             let vbo = gl.create_buffer()?;
@@ -259,6 +283,7 @@ impl Painter {
                 max_texture_side,
                 program,
                 u_screen_size,
+                u_screen_origin,
                 u_sampler,
                 is_webgl_1,
                 vao,
@@ -269,6 +294,7 @@ impl Painter {
                 textures: Default::default(),
                 next_native_tex_id: 1 << 32,
                 textures_to_destroy: Vec::new(),
+                render_targets: Mutex::new(Vec::new()),
                 destroyed: false,
             })
         }
@@ -301,19 +327,103 @@ impl Painter {
     /// So if in a [`egui::Shape::Callback`] you need to use an offscreen FBO, you should
     /// then restore to this afterwards with
     /// `gl.bind_framebuffer(glow::FRAMEBUFFER, painter.intermediate_fbo());`
-    #[expect(clippy::unused_self)]
     pub fn intermediate_fbo(&self) -> Option<glow::Framebuffer> {
-        // We don't currently ever render to an offscreen buffer,
-        // but we may want to start to in order to do anti-aliasing on web, for instance.
-        None
+        self.render_targets
+            .lock()
+            .ok()
+            .and_then(|targets| targets.last().map(|target| target.framebuffer))
+    }
+
+    /// Map a callback rectangle from its active target to global egui coordinates.
+    pub fn callback_rect_to_global(&self, rect: Rect) -> Rect {
+        let origin = self
+            .render_targets
+            .lock()
+            .ok()
+            .and_then(|targets| targets.last().map(|target| target.rect.min))
+            .unwrap_or(Pos2::ZERO);
+        rect.translate(origin.to_vec2())
+    }
+
+    /// Redirect subsequent egui primitives to `framebuffer`.
+    pub fn push_render_target(
+        &self,
+        framebuffer: glow::Framebuffer,
+        rect: Rect,
+        screen_size_px: [u32; 2],
+        parent_screen_size_px: [u32; 2],
+        pixels_per_point: f32,
+    ) -> bool {
+        if !rect.is_positive() || screen_size_px.contains(&0) {
+            return false;
+        }
+        let Ok(mut targets) = self.render_targets.lock() else {
+            return false;
+        };
+        targets.push(RenderTarget {
+            framebuffer,
+            rect,
+            screen_size_px,
+            parent_screen_size_px,
+            pixels_per_point,
+        });
+        drop(targets);
+        unsafe {
+            self.prepare_painting(parent_screen_size_px, pixels_per_point);
+            self.gl.disable(glow::SCISSOR_TEST);
+            self.gl.clear_color(0.0, 0.0, 0.0, 0.0);
+            self.gl.clear(glow::COLOR_BUFFER_BIT);
+            self.gl.enable(glow::SCISSOR_TEST);
+        }
+        true
+    }
+
+    /// Restore the parent target and paint `texture` over `rect`.
+    pub fn pop_render_target_and_paint(
+        &self,
+        texture: glow::Texture,
+        rect: Rect,
+        clip_rect: Rect,
+        tint: Color32,
+    ) -> bool {
+        let target = {
+            let Ok(mut targets) = self.render_targets.lock() else {
+                return false;
+            };
+            let Some(target) = targets.pop() else {
+                return false;
+            };
+            target
+        };
+
+        unsafe {
+            self.prepare_painting(target.parent_screen_size_px, target.pixels_per_point);
+        }
+        self.set_clip_rect(
+            target.parent_screen_size_px,
+            target.pixels_per_point,
+            clip_rect,
+        );
+
+        let mut mesh = Mesh::with_texture(TextureId::User(u64::MAX));
+        let flipped_uv = Rect {
+            min: pos2(0.0, 1.0),
+            max: pos2(1.0, 0.0),
+        };
+        mesh.add_rect_with_uv(rect, flipped_uv, tint);
+        self.paint_mesh_with_texture(&mesh, texture);
+        true
     }
 
     unsafe fn prepare_painting(
-        &mut self,
+        &self,
         [width_in_pixels, height_in_pixels]: [u32; 2],
         pixels_per_point: f32,
     ) {
+        let target = self.paint_target([width_in_pixels, height_in_pixels]);
         unsafe {
+            self.gl
+                .bind_framebuffer(glow::FRAMEBUFFER, target.framebuffer);
             self.gl.enable(glow::SCISSOR_TEST);
             // egui outputs mesh in both winding orders
             self.gl.disable(glow::CULL_FACE);
@@ -339,15 +449,24 @@ impl Painter {
                 check_for_gl_error!(&self.gl, "FRAMEBUFFER_SRGB");
             }
 
-            let width_in_points = width_in_pixels as f32 / pixels_per_point;
-            let height_in_points = height_in_pixels as f32 / pixels_per_point;
+            let width_in_points = target.screen_size_px[0] as f32 / pixels_per_point;
+            let height_in_points = target.screen_size_px[1] as f32 / pixels_per_point;
 
-            self.gl
-                .viewport(0, 0, width_in_pixels as i32, height_in_pixels as i32);
+            self.gl.viewport(
+                0,
+                0,
+                target.screen_size_px[0] as i32,
+                target.screen_size_px[1] as i32,
+            );
             self.gl.use_program(Some(self.program));
 
             self.gl
                 .uniform_2_f32(Some(&self.u_screen_size), width_in_points, height_in_points);
+            self.gl.uniform_2_f32(
+                Some(&self.u_screen_origin),
+                target.origin.x,
+                target.origin.y,
+            );
             self.gl.uniform_1_i32(Some(&self.u_sampler), 0);
             self.gl.active_texture(glow::TEXTURE0);
 
@@ -357,6 +476,34 @@ impl Painter {
         }
 
         check_for_gl_error!(&self.gl, "prepare_painting");
+    }
+
+    fn paint_target(&self, screen_size_px: [u32; 2]) -> PaintTarget {
+        self.render_targets
+            .lock()
+            .ok()
+            .and_then(|targets| {
+                targets.last().map(|target| PaintTarget {
+                    framebuffer: Some(target.framebuffer),
+                    origin: target.rect.min,
+                    screen_size_px: target.screen_size_px,
+                })
+            })
+            .unwrap_or(PaintTarget {
+                framebuffer: None,
+                origin: Pos2::ZERO,
+                screen_size_px,
+            })
+    }
+
+    fn set_clip_rect(&self, screen_size_px: [u32; 2], pixels_per_point: f32, clip_rect: Rect) {
+        let target = self.paint_target(screen_size_px);
+        set_clip_rect(
+            &self.gl,
+            target.screen_size_px,
+            pixels_per_point,
+            clip_rect.translate(-target.origin.to_vec2()),
+        );
     }
 
     pub fn clear(&self, screen_size_in_pixels: [u32; 2], clear_color: [f32; 4]) {
@@ -413,6 +560,15 @@ impl Painter {
         profiling::function_scope!();
         self.assert_not_destroyed();
 
+        if let Ok(mut targets) = self.render_targets.lock()
+            && !targets.is_empty()
+        {
+            log::warn!(
+                "Discarding {} unclosed egui glow render targets",
+                targets.len()
+            );
+            targets.clear();
+        }
         unsafe { self.prepare_painting(screen_size_px, pixels_per_point) };
 
         for egui::ClippedPrimitive {
@@ -420,7 +576,7 @@ impl Painter {
             primitive,
         } in clipped_primitives
         {
-            set_clip_rect(&self.gl, screen_size_px, pixels_per_point, *clip_rect);
+            self.set_clip_rect(screen_size_px, pixels_per_point, *clip_rect);
 
             match primitive {
                 Primitive::Mesh(mesh) => {
@@ -430,11 +586,13 @@ impl Painter {
                     if callback.rect.is_positive() {
                         profiling::scope!("callback");
 
+                        let target = self.paint_target(screen_size_px);
+                        let offset = -target.origin.to_vec2();
                         let info = egui::PaintCallbackInfo {
-                            viewport: callback.rect,
-                            clip_rect: *clip_rect,
+                            viewport: callback.rect.translate(offset),
+                            clip_rect: clip_rect.translate(offset),
                             pixels_per_point,
-                            screen_size_px,
+                            screen_size_px: target.screen_size_px,
                         };
 
                         let viewport_px = info.viewport_in_pixels();
@@ -480,41 +638,42 @@ impl Painter {
     }
 
     #[inline(never)] // Easier profiling
-    fn paint_mesh(&mut self, mesh: &Mesh) {
+    fn paint_mesh(&self, mesh: &Mesh) {
         debug_assert!(mesh.is_valid(), "Mesh is not valid");
         if let Some(texture) = self.texture(mesh.texture_id) {
-            unsafe {
-                self.gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
-                self.gl.buffer_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    bytemuck::cast_slice(&mesh.vertices),
-                    glow::STREAM_DRAW,
-                );
-
-                self.gl
-                    .bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(self.element_array_buffer));
-                self.gl.buffer_data_u8_slice(
-                    glow::ELEMENT_ARRAY_BUFFER,
-                    bytemuck::cast_slice(&mesh.indices),
-                    glow::STREAM_DRAW,
-                );
-
-                self.gl.bind_texture(glow::TEXTURE_2D, Some(texture));
-            }
-
-            unsafe {
-                self.gl.draw_elements(
-                    glow::TRIANGLES,
-                    mesh.indices.len() as i32,
-                    glow::UNSIGNED_INT,
-                    0,
-                );
-            }
-
-            check_for_gl_error!(&self.gl, "paint_mesh");
+            self.paint_mesh_with_texture(mesh, texture);
         } else {
             log::warn!("Failed to find texture {:?}", mesh.texture_id);
         }
+    }
+
+    fn paint_mesh_with_texture(&self, mesh: &Mesh, texture: glow::Texture) {
+        unsafe {
+            self.gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
+            self.gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(&mesh.vertices),
+                glow::STREAM_DRAW,
+            );
+
+            self.gl
+                .bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(self.element_array_buffer));
+            self.gl.buffer_data_u8_slice(
+                glow::ELEMENT_ARRAY_BUFFER,
+                bytemuck::cast_slice(&mesh.indices),
+                glow::STREAM_DRAW,
+            );
+
+            self.gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+            self.gl.draw_elements(
+                glow::TRIANGLES,
+                mesh.indices.len() as i32,
+                glow::UNSIGNED_INT,
+                0,
+            );
+        }
+
+        check_for_gl_error!(&self.gl, "paint_mesh");
     }
 
     // ------------------------------------------------------------------------
