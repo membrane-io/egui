@@ -9,7 +9,7 @@ use std::{
 
 use egui::{
     Color32, TextureId,
-    emath::{Pos2, Rect, pos2},
+    emath::{Pos2, Rect, Vec2, pos2},
     epaint::{Mesh, PaintCallbackInfo, Primitive, Vertex},
 };
 use glow::HasContext as _;
@@ -591,7 +591,7 @@ impl Painter {
         let mut scissor = clip_rect_to_scissor(
             parent.screen_size_px,
             target.pixels_per_point,
-            clip_rect.translate(-parent.origin.to_vec2()),
+            translate_clip_rect(clip_rect, -parent.origin.to_vec2()),
         );
         if target.parent_state.scissor_enabled && target.parent_state.program != Some(self.program)
         {
@@ -703,7 +703,7 @@ impl Painter {
             &self.gl,
             target.screen_size_px,
             pixels_per_point,
-            clip_rect.translate(-target.origin.to_vec2()),
+            translate_clip_rect(clip_rect, -target.origin.to_vec2()),
         );
     }
 
@@ -804,7 +804,7 @@ impl Painter {
                         let offset = -target.origin.to_vec2();
                         let info = || egui::PaintCallbackInfo {
                             viewport: callback.rect.translate(offset),
-                            clip_rect: clip_rect.translate(offset),
+                            clip_rect: translate_clip_rect(*clip_rect, offset),
                             pixels_per_point,
                             screen_size_px: target.screen_size_px,
                         };
@@ -1175,6 +1175,14 @@ fn set_clip_rect(
     }
 }
 
+fn translate_clip_rect(clip_rect: Rect, translation: Vec2) -> Rect {
+    if clip_rect == Rect::EVERYTHING {
+        clip_rect
+    } else {
+        clip_rect.translate(translation)
+    }
+}
+
 fn clip_rect_to_scissor(
     [width_px, height_px]: [u32; 2],
     pixels_per_point: f32,
@@ -1212,4 +1220,19 @@ fn intersect_scissors(a: [i32; 4], b: [i32; 4]) -> [i32; 4] {
     let max_x = (a[0] + a[2]).min(b[0] + b[2]).max(min_x);
     let max_y = (a[1] + a[3]).min(b[1] + b[3]).max(min_y);
     [min_x, min_y, max_x - min_x, max_y - min_y]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn translating_unbounded_clip_keeps_full_target_scissor() {
+        let clip_rect = translate_clip_rect(Rect::EVERYTHING, egui::vec2(-8.0, -98.0));
+
+        assert_eq!(
+            clip_rect_to_scissor([402, 135], 1.0, clip_rect),
+            [0, 0, 402, 135]
+        );
+    }
 }
