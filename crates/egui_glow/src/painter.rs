@@ -132,6 +132,22 @@ struct PaintTarget {
     screen_size_px: [u32; 2],
 }
 
+/// Geometry of the parent target after [`Painter::pop_render_target`].
+///
+/// A custom presenter needs the parent origin and screen size to map screen-space points to
+/// normalized device coordinates, and the scissor to clip inside a nested target or a panel.
+#[derive(Clone, Copy, Debug)]
+pub struct PoppedTarget {
+    /// Origin of the parent target in egui points. Zero for the root target.
+    pub parent_origin: Pos2,
+    /// Size of the parent target framebuffer in physical pixels.
+    pub parent_screen_size_px: [u32; 2],
+    /// Points per physical pixel of the popped target.
+    pub pixels_per_point: f32,
+    /// Parent clip in framebuffer pixels: `[x, y, width, height]`, origin bottom-left.
+    pub clip_scissor: [i32; 4],
+}
+
 #[derive(Clone, Copy)]
 struct GlState {
     framebuffer: Option<glow::Framebuffer>,
@@ -573,22 +589,19 @@ impl Painter {
         true
     }
 
-    /// Restore the parent target and paint `texture` over `rect`.
-    pub fn pop_render_target_and_paint(
-        &self,
-        texture: glow::Texture,
-        rect: Rect,
-        clip_rect: Rect,
-        tint: Color32,
-    ) -> bool {
+    /// Restore the parent target without painting, and return the parent geometry.
+    ///
+    /// A caller uses this to present the captured texture itself, for example through a custom
+    /// shader. The caller must return `true` from the render-target callback so the painter
+    /// restores egui state after the custom presentation.
+    ///
+    /// `clip_rect` is the clip of the parent target. The returned [`PoppedTarget::clip_scissor`]
+    /// holds that clip in framebuffer pixels, intersected with the parent scissor when the parent
+    /// used a custom program.
+    pub fn pop_render_target(&self, clip_rect: Rect) -> Option<PoppedTarget> {
         let target = {
-            let Ok(mut targets) = self.render_targets.lock() else {
-                return false;
-            };
-            let Some(target) = targets.pop() else {
-                return false;
-            };
-            target
+            let mut targets = self.render_targets.lock().ok()?;
+            targets.pop()?
         };
 
         unsafe {
@@ -607,10 +620,33 @@ impl Painter {
         {
             scissor = intersect_scissors(scissor, target.parent_state.scissor_box);
         }
+        Some(PoppedTarget {
+            parent_origin: parent.origin,
+            parent_screen_size_px: parent.screen_size_px,
+            pixels_per_point: target.pixels_per_point,
+            clip_scissor: scissor,
+        })
+    }
+
+    /// Restore the parent target and paint `texture` over `rect`.
+    pub fn pop_render_target_and_paint(
+        &self,
+        texture: glow::Texture,
+        rect: Rect,
+        clip_rect: Rect,
+        tint: Color32,
+    ) -> bool {
+        let Some(popped) = self.pop_render_target(clip_rect) else {
+            return false;
+        };
         unsafe {
             self.gl.enable(glow::SCISSOR_TEST);
-            self.gl
-                .scissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+            self.gl.scissor(
+                popped.clip_scissor[0],
+                popped.clip_scissor[1],
+                popped.clip_scissor[2],
+                popped.clip_scissor[3],
+            );
             self.gl.active_texture(glow::TEXTURE0);
         }
 
