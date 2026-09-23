@@ -12,7 +12,7 @@
 
 pub mod painter;
 pub use glow;
-pub use painter::{CallbackFn, Painter, PainterError};
+pub use painter::{CallbackFn, Painter, PainterError, RenderTargetCallbackFn};
 mod misc_util;
 mod shader_version;
 mod vao;

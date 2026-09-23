@@ -107,6 +107,7 @@ pub struct Painter {
     textures_to_destroy: Vec<glow::Texture>,
 
     render_targets: Mutex<Vec<RenderTarget>>,
+    root_framebuffer: Mutex<Option<glow::Framebuffer>>,
 
     /// Used to make sure we are destroyed correctly.
     destroyed: bool,
@@ -119,6 +120,7 @@ struct RenderTarget {
     screen_size_px: [u32; 2],
     parent_screen_size_px: [u32; 2],
     pixels_per_point: f32,
+    parent_state: GlState,
 }
 
 #[derive(Clone, Copy)]
@@ -126,6 +128,120 @@ struct PaintTarget {
     framebuffer: Option<glow::Framebuffer>,
     origin: Pos2,
     screen_size_px: [u32; 2],
+}
+
+#[derive(Clone, Copy)]
+struct GlState {
+    framebuffer: Option<glow::Framebuffer>,
+    viewport: [i32; 4],
+    scissor_box: [i32; 4],
+    scissor_enabled: bool,
+    program: Option<glow::Program>,
+    vertex_array: Option<glow::VertexArray>,
+    array_buffer: Option<glow::Buffer>,
+    element_array_buffer: Option<glow::Buffer>,
+    blend_enabled: bool,
+    blend_equation_rgb: u32,
+    blend_equation_alpha: u32,
+    blend_src_rgb: u32,
+    blend_dst_rgb: u32,
+    blend_src_alpha: u32,
+    blend_dst_alpha: u32,
+    depth_test_enabled: bool,
+    cull_face_enabled: bool,
+    color_mask: [bool; 4],
+    active_texture: u32,
+    texture_2d: Option<glow::Texture>,
+    framebuffer_srgb_enabled: bool,
+}
+
+impl GlState {
+    unsafe fn capture(gl: &glow::Context, supports_srgb_framebuffer: bool) -> Self {
+        let mut viewport = [0; 4];
+        let mut scissor_box = [0; 4];
+        unsafe {
+            gl.get_parameter_i32_slice(glow::VIEWPORT, &mut viewport);
+            gl.get_parameter_i32_slice(glow::SCISSOR_BOX, &mut scissor_box);
+            Self {
+                framebuffer: gl.get_parameter_framebuffer(glow::FRAMEBUFFER_BINDING),
+                viewport,
+                scissor_box,
+                scissor_enabled: gl.is_enabled(glow::SCISSOR_TEST),
+                program: gl.get_parameter_program(glow::CURRENT_PROGRAM),
+                vertex_array: gl.get_parameter_vertex_array(glow::VERTEX_ARRAY_BINDING),
+                array_buffer: gl.get_parameter_buffer(glow::ARRAY_BUFFER_BINDING),
+                element_array_buffer: gl.get_parameter_buffer(glow::ELEMENT_ARRAY_BUFFER_BINDING),
+                blend_enabled: gl.is_enabled(glow::BLEND),
+                blend_equation_rgb: gl.get_parameter_i32(glow::BLEND_EQUATION_RGB) as u32,
+                blend_equation_alpha: gl.get_parameter_i32(glow::BLEND_EQUATION_ALPHA) as u32,
+                blend_src_rgb: gl.get_parameter_i32(glow::BLEND_SRC_RGB) as u32,
+                blend_dst_rgb: gl.get_parameter_i32(glow::BLEND_DST_RGB) as u32,
+                blend_src_alpha: gl.get_parameter_i32(glow::BLEND_SRC_ALPHA) as u32,
+                blend_dst_alpha: gl.get_parameter_i32(glow::BLEND_DST_ALPHA) as u32,
+                depth_test_enabled: gl.is_enabled(glow::DEPTH_TEST),
+                cull_face_enabled: gl.is_enabled(glow::CULL_FACE),
+                color_mask: gl.get_parameter_bool_array(glow::COLOR_WRITEMASK),
+                active_texture: gl.get_parameter_i32(glow::ACTIVE_TEXTURE) as u32,
+                texture_2d: gl.get_parameter_texture(glow::TEXTURE_BINDING_2D),
+                framebuffer_srgb_enabled: supports_srgb_framebuffer
+                    && gl.is_enabled(glow::FRAMEBUFFER_SRGB),
+            }
+        }
+    }
+
+    unsafe fn restore(self, gl: &glow::Context, supports_srgb_framebuffer: bool) {
+        unsafe {
+            gl.bind_framebuffer(glow::FRAMEBUFFER, self.framebuffer);
+            gl.viewport(
+                self.viewport[0],
+                self.viewport[1],
+                self.viewport[2],
+                self.viewport[3],
+            );
+            set_enabled(gl, glow::SCISSOR_TEST, self.scissor_enabled);
+            gl.scissor(
+                self.scissor_box[0],
+                self.scissor_box[1],
+                self.scissor_box[2],
+                self.scissor_box[3],
+            );
+            gl.use_program(self.program);
+            gl.bind_vertex_array(self.vertex_array);
+            gl.bind_buffer(glow::ARRAY_BUFFER, self.array_buffer);
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, self.element_array_buffer);
+            set_enabled(gl, glow::BLEND, self.blend_enabled);
+            gl.blend_equation_separate(self.blend_equation_rgb, self.blend_equation_alpha);
+            gl.blend_func_separate(
+                self.blend_src_rgb,
+                self.blend_dst_rgb,
+                self.blend_src_alpha,
+                self.blend_dst_alpha,
+            );
+            set_enabled(gl, glow::DEPTH_TEST, self.depth_test_enabled);
+            set_enabled(gl, glow::CULL_FACE, self.cull_face_enabled);
+            gl.color_mask(
+                self.color_mask[0],
+                self.color_mask[1],
+                self.color_mask[2],
+                self.color_mask[3],
+            );
+            gl.active_texture(self.active_texture);
+            gl.bind_texture(glow::TEXTURE_2D, self.texture_2d);
+            if supports_srgb_framebuffer {
+                set_enabled(gl, glow::FRAMEBUFFER_SRGB, self.framebuffer_srgb_enabled);
+            }
+        }
+    }
+}
+
+unsafe fn set_enabled(gl: &glow::Context, capability: u32, enabled: bool) {
+    unsafe {
+        if enabled {
+            gl.enable(capability);
+        } else {
+            gl.disable(capability);
+        }
+    }
 }
 
 /// A callback function that can be used to compose an [`egui::PaintCallback`] for custom rendering
@@ -142,6 +258,23 @@ pub struct CallbackFn {
 }
 
 impl CallbackFn {
+    pub fn new<F: Fn(PaintCallbackInfo, &Painter) -> bool + Sync + Send + 'static>(
+        callback: F,
+    ) -> Self {
+        let f = Box::new(callback);
+        Self { f }
+    }
+}
+
+/// A callback that changes the active render target without changing the parent callback state.
+///
+/// Unlike [`CallbackFn`], the painter does not set a callback viewport before it calls this
+/// function. This lets the callback save the complete parent state before it binds a render target.
+pub struct RenderTargetCallbackFn {
+    f: Box<dyn (Fn(PaintCallbackInfo, &Painter) -> bool) + Sync + Send>,
+}
+
+impl RenderTargetCallbackFn {
     pub fn new<F: Fn(PaintCallbackInfo, &Painter) -> bool + Sync + Send + 'static>(
         callback: F,
     ) -> Self {
@@ -295,6 +428,7 @@ impl Painter {
                 next_native_tex_id: 1 << 32,
                 textures_to_destroy: Vec::new(),
                 render_targets: Mutex::new(Vec::new()),
+                root_framebuffer: Mutex::new(None),
                 destroyed: false,
             })
         }
@@ -332,6 +466,7 @@ impl Painter {
             .lock()
             .ok()
             .and_then(|targets| targets.last().map(|target| target.framebuffer))
+            .or_else(|| self.root_framebuffer.lock().ok().and_then(|root| *root))
     }
 
     /// Map a callback rectangle from its active target to global egui coordinates.
@@ -357,6 +492,7 @@ impl Painter {
         if !rect.is_positive() || screen_size_px.contains(&0) {
             return false;
         }
+        let parent_state = unsafe { GlState::capture(&self.gl, self.supports_srgb_framebuffer) };
         let Ok(mut targets) = self.render_targets.lock() else {
             return false;
         };
@@ -366,6 +502,7 @@ impl Painter {
             screen_size_px,
             parent_screen_size_px,
             pixels_per_point,
+            parent_state,
         });
         drop(targets);
         unsafe {
@@ -397,13 +534,26 @@ impl Painter {
         };
 
         unsafe {
-            self.prepare_painting(target.parent_screen_size_px, target.pixels_per_point);
+            target
+                .parent_state
+                .restore(&self.gl, self.supports_srgb_framebuffer);
         }
-        self.set_clip_rect(
-            target.parent_screen_size_px,
+        let parent = self.paint_target(target.parent_screen_size_px);
+        let mut scissor = clip_rect_to_scissor(
+            parent.screen_size_px,
             target.pixels_per_point,
-            clip_rect,
+            clip_rect.translate(-parent.origin.to_vec2()),
         );
+        if target.parent_state.scissor_enabled && target.parent_state.program != Some(self.program)
+        {
+            scissor = intersect_scissors(scissor, target.parent_state.scissor_box);
+        }
+        unsafe {
+            self.gl.enable(glow::SCISSOR_TEST);
+            self.gl
+                .scissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+            self.gl.active_texture(glow::TEXTURE0);
+        }
 
         let mut mesh = Mesh::with_texture(TextureId::User(u64::MAX));
         let flipped_uv = Rect {
@@ -422,8 +572,10 @@ impl Painter {
     ) {
         let target = self.paint_target([width_in_pixels, height_in_pixels]);
         unsafe {
-            self.gl
-                .bind_framebuffer(glow::FRAMEBUFFER, target.framebuffer);
+            if let Some(framebuffer) = target.framebuffer {
+                self.gl
+                    .bind_framebuffer(glow::FRAMEBUFFER, Some(framebuffer));
+            }
             self.gl.enable(glow::SCISSOR_TEST);
             // egui outputs mesh in both winding orders
             self.gl.disable(glow::CULL_FACE);
@@ -564,14 +716,19 @@ impl Painter {
         profiling::function_scope!();
         self.assert_not_destroyed();
 
-        if let Ok(mut targets) = self.render_targets.lock()
-            && !targets.is_empty()
-        {
-            log::warn!(
-                "Discarding {} unclosed egui glow render targets",
-                targets.len()
-            );
+        let unclosed = self.render_targets.lock().ok().and_then(|mut targets| {
+            let unclosed = (!targets.is_empty()).then(|| (targets.len(), targets[0].parent_state));
             targets.clear();
+            unclosed
+        });
+        if let Some((count, parent_state)) = unclosed {
+            log::warn!("Discarding {} unclosed egui glow render targets", count);
+            unsafe {
+                parent_state.restore(&self.gl, self.supports_srgb_framebuffer);
+            }
+        }
+        if let Ok(mut root) = self.root_framebuffer.lock() {
+            *root = unsafe { self.gl.get_parameter_framebuffer(glow::FRAMEBUFFER_BINDING) };
         }
         unsafe { self.prepare_painting(screen_size_px, pixels_per_point) };
 
@@ -580,10 +737,9 @@ impl Painter {
             primitive,
         } in clipped_primitives
         {
-            self.set_clip_rect(screen_size_px, pixels_per_point, *clip_rect);
-
             match primitive {
                 Primitive::Mesh(mesh) => {
+                    self.set_clip_rect(screen_size_px, pixels_per_point, *clip_rect);
                     self.paint_mesh(mesh);
                 }
                 Primitive::Callback(callback) => {
@@ -592,32 +748,37 @@ impl Painter {
 
                         let target = self.paint_target(screen_size_px);
                         let offset = -target.origin.to_vec2();
-                        let info = egui::PaintCallbackInfo {
+                        let info = || egui::PaintCallbackInfo {
                             viewport: callback.rect.translate(offset),
                             clip_rect: clip_rect.translate(offset),
                             pixels_per_point,
                             screen_size_px: target.screen_size_px,
                         };
 
-                        let viewport_px = info.viewport_in_pixels();
-                        unsafe {
-                            self.gl.viewport(
-                                viewport_px.left_px,
-                                viewport_px.from_bottom_px,
-                                viewport_px.width_px,
-                                viewport_px.height_px,
-                            );
-                        }
-
                         let should_reset_state = if let Some(callback) =
-                            callback.callback.downcast_ref::<CallbackFn>()
+                            callback.callback.downcast_ref::<RenderTargetCallbackFn>()
                         {
-                            (callback.f)(info, self)
+                            (callback.f)(info(), self)
                         } else {
-                            log::warn!(
-                                "Warning: Unsupported render callback. Expected egui_glow::CallbackFn"
-                            );
-                            false
+                            self.set_clip_rect(screen_size_px, pixels_per_point, *clip_rect);
+                            let info = info();
+                            let viewport_px = info.viewport_in_pixels();
+                            unsafe {
+                                self.gl.viewport(
+                                    viewport_px.left_px,
+                                    viewport_px.from_bottom_px,
+                                    viewport_px.width_px,
+                                    viewport_px.height_px,
+                                );
+                            }
+                            if let Some(callback) = callback.callback.downcast_ref::<CallbackFn>() {
+                                (callback.f)(info, self)
+                            } else {
+                                log::warn!(
+                                    "Warning: Unsupported render callback. Expected egui_glow::CallbackFn"
+                                );
+                                false
+                            }
                         };
 
                         check_for_gl_error!(&self.gl, "callback");
@@ -628,6 +789,18 @@ impl Painter {
                         }
                     }
                 }
+            }
+        }
+
+        let unclosed = self.render_targets.lock().ok().and_then(|mut targets| {
+            let unclosed = (!targets.is_empty()).then(|| (targets.len(), targets[0].parent_state));
+            targets.clear();
+            unclosed
+        });
+        if let Some((count, parent_state)) = unclosed {
+            log::warn!("Discarding {} unclosed egui glow render targets", count);
+            unsafe {
+                parent_state.restore(&self.gl, self.supports_srgb_framebuffer);
             }
         }
 
@@ -938,10 +1111,21 @@ impl Drop for Painter {
 
 fn set_clip_rect(
     gl: &glow::Context,
-    [width_px, height_px]: [u32; 2],
+    screen_size_px: [u32; 2],
     pixels_per_point: f32,
     clip_rect: Rect,
 ) {
+    let [x, y, width, height] = clip_rect_to_scissor(screen_size_px, pixels_per_point, clip_rect);
+    unsafe {
+        gl.scissor(x, y, width, height);
+    }
+}
+
+fn clip_rect_to_scissor(
+    [width_px, height_px]: [u32; 2],
+    pixels_per_point: f32,
+    clip_rect: Rect,
+) -> [i32; 4] {
     // Transform clip rect to physical pixels:
     let clip_min_x = pixels_per_point * clip_rect.min.x;
     let clip_min_y = pixels_per_point * clip_rect.min.y;
@@ -960,12 +1144,18 @@ fn set_clip_rect(
     let clip_max_x = clip_max_x.clamp(clip_min_x, width_px as i32);
     let clip_max_y = clip_max_y.clamp(clip_min_y, height_px as i32);
 
-    unsafe {
-        gl.scissor(
-            clip_min_x,
-            height_px as i32 - clip_max_y,
-            clip_max_x - clip_min_x,
-            clip_max_y - clip_min_y,
-        );
-    }
+    [
+        clip_min_x,
+        height_px as i32 - clip_max_y,
+        clip_max_x - clip_min_x,
+        clip_max_y - clip_min_y,
+    ]
+}
+
+fn intersect_scissors(a: [i32; 4], b: [i32; 4]) -> [i32; 4] {
+    let min_x = a[0].max(b[0]);
+    let min_y = a[1].max(b[1]);
+    let max_x = (a[0] + a[2]).min(b[0] + b[2]).max(min_x);
+    let max_y = (a[1] + a[3]).min(b[1] + b[3]).max(min_y);
+    [min_x, min_y, max_x - min_x, max_y - min_y]
 }
