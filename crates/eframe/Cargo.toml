@@ -274,6 +274,7 @@ web-sys = { workspace = true, features = [
   "TouchList",
   "WebGl2RenderingContext",
   "WebglDebugRendererInfo",
+  "WebGlFramebuffer",
   "WebGlRenderingContext",
   "WheelEvent",
   "Window",
