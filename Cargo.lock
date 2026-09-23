@@ -1434,6 +1434,7 @@ dependencies = [
  "glutin-winit",
  "log",
  "profiling",
+ "web-sys",
  "winit",
 ]
 

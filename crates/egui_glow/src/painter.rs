@@ -108,6 +108,8 @@ pub struct Painter {
 
     render_targets: Mutex<Vec<RenderTarget>>,
     root_framebuffer: Mutex<Option<glow::Framebuffer>>,
+    #[cfg(target_arch = "wasm32")]
+    root_external_framebuffer: Mutex<Option<web_sys::WebGlFramebuffer>>,
 
     /// Used to make sure we are destroyed correctly.
     destroyed: bool,
@@ -156,14 +158,18 @@ struct GlState {
 }
 
 impl GlState {
-    unsafe fn capture(gl: &glow::Context, supports_srgb_framebuffer: bool) -> Self {
+    unsafe fn capture(
+        gl: &glow::Context,
+        supports_srgb_framebuffer: bool,
+        framebuffer: Option<glow::Framebuffer>,
+    ) -> Self {
         let mut viewport = [0; 4];
         let mut scissor_box = [0; 4];
         unsafe {
             gl.get_parameter_i32_slice(glow::VIEWPORT, &mut viewport);
             gl.get_parameter_i32_slice(glow::SCISSOR_BOX, &mut scissor_box);
             Self {
-                framebuffer: gl.get_parameter_framebuffer(glow::FRAMEBUFFER_BINDING),
+                framebuffer,
                 viewport,
                 scissor_box,
                 scissor_enabled: gl.is_enabled(glow::SCISSOR_TEST),
@@ -189,9 +195,10 @@ impl GlState {
         }
     }
 
-    unsafe fn restore(self, gl: &glow::Context, supports_srgb_framebuffer: bool) {
+    unsafe fn restore(self, painter: &Painter) {
+        let gl = &painter.gl;
         unsafe {
-            gl.bind_framebuffer(glow::FRAMEBUFFER, self.framebuffer);
+            painter.bind_framebuffer(self.framebuffer);
             gl.viewport(
                 self.viewport[0],
                 self.viewport[1],
@@ -227,7 +234,7 @@ impl GlState {
             );
             gl.active_texture(self.active_texture);
             gl.bind_texture(glow::TEXTURE_2D, self.texture_2d);
-            if supports_srgb_framebuffer {
+            if painter.supports_srgb_framebuffer {
                 set_enabled(gl, glow::FRAMEBUFFER_SRGB, self.framebuffer_srgb_enabled);
             }
         }
@@ -429,6 +436,8 @@ impl Painter {
                 textures_to_destroy: Vec::new(),
                 render_targets: Mutex::new(Vec::new()),
                 root_framebuffer: Mutex::new(None),
+                #[cfg(target_arch = "wasm32")]
+                root_external_framebuffer: Mutex::new(None),
                 destroyed: false,
             })
         }
@@ -469,6 +478,42 @@ impl Painter {
             .or_else(|| self.root_framebuffer.lock().ok().and_then(|root| *root))
     }
 
+    /// Bind the active egui render target.
+    ///
+    /// This method also restores an external framebuffer that a web integration provided.
+    pub unsafe fn bind_intermediate_fbo(&self) {
+        unsafe {
+            self.bind_framebuffer(self.intermediate_fbo());
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn set_external_framebuffer(&self, framebuffer: Option<web_sys::WebGlFramebuffer>) {
+        if let Ok(mut root) = self.root_external_framebuffer.lock() {
+            *root = framebuffer;
+        }
+    }
+
+    unsafe fn bind_framebuffer(&self, framebuffer: Option<glow::Framebuffer>) {
+        #[cfg(target_arch = "wasm32")]
+        if framebuffer.is_none()
+            && let Some(framebuffer) = self
+                .root_external_framebuffer
+                .lock()
+                .ok()
+                .and_then(|root| root.clone())
+        {
+            unsafe {
+                self.gl
+                    .bind_external_framebuffer(glow::FRAMEBUFFER, &framebuffer);
+            }
+            return;
+        }
+        unsafe {
+            self.gl.bind_framebuffer(glow::FRAMEBUFFER, framebuffer);
+        }
+    }
+
     /// Map a callback rectangle from its active target to global egui coordinates.
     pub fn callback_rect_to_global(&self, rect: Rect) -> Rect {
         let origin = self
@@ -492,7 +537,13 @@ impl Painter {
         if !rect.is_positive() || screen_size_px.contains(&0) {
             return false;
         }
-        let parent_state = unsafe { GlState::capture(&self.gl, self.supports_srgb_framebuffer) };
+        let parent_state = unsafe {
+            GlState::capture(
+                &self.gl,
+                self.supports_srgb_framebuffer,
+                self.intermediate_fbo(),
+            )
+        };
         let Ok(mut targets) = self.render_targets.lock() else {
             return false;
         };
@@ -534,9 +585,7 @@ impl Painter {
         };
 
         unsafe {
-            target
-                .parent_state
-                .restore(&self.gl, self.supports_srgb_framebuffer);
+            target.parent_state.restore(self);
         }
         let parent = self.paint_target(target.parent_screen_size_px);
         let mut scissor = clip_rect_to_scissor(
@@ -724,11 +773,16 @@ impl Painter {
         if let Some((count, parent_state)) = unclosed {
             log::warn!("Discarding {} unclosed egui glow render targets", count);
             unsafe {
-                parent_state.restore(&self.gl, self.supports_srgb_framebuffer);
+                parent_state.restore(self);
             }
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        let root_framebuffer =
+            unsafe { self.gl.get_parameter_framebuffer(glow::FRAMEBUFFER_BINDING) };
+        #[cfg(target_arch = "wasm32")]
+        let root_framebuffer = None;
         if let Ok(mut root) = self.root_framebuffer.lock() {
-            *root = unsafe { self.gl.get_parameter_framebuffer(glow::FRAMEBUFFER_BINDING) };
+            *root = root_framebuffer;
         }
         unsafe { self.prepare_painting(screen_size_px, pixels_per_point) };
 
@@ -800,7 +854,7 @@ impl Painter {
         if let Some((count, parent_state)) = unclosed {
             log::warn!("Discarding {} unclosed egui glow render targets", count);
             unsafe {
-                parent_state.restore(&self.gl, self.supports_srgb_framebuffer);
+                parent_state.restore(self);
             }
         }
 
