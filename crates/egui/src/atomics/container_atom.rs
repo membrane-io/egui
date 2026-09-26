@@ -440,6 +440,12 @@ pub struct SizedContainerAtom<'a> {
 }
 
 impl<'atom> SizedContainerAtom<'atom> {
+    /// MEMBRANE: the size of the inner content, before any growing. `ui_inset` aligns its frame to
+    /// this size.
+    pub fn inner_size(&self) -> Vec2 {
+        self.inner_size
+    }
+
     pub fn iter_kinds(&self) -> impl Iterator<Item = &SizedAtomKind<'atom>> {
         self.sized_atoms.iter().map(|atom| &atom.kind)
     }
