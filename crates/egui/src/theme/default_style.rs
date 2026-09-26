@@ -136,7 +136,11 @@ impl StyleProvider<TextEditStyle> for DefaultStyle {
             // While focused, the frame is outlined in the selection color.
             style.visuals.selection.stroke
         } else {
-            widget_visuals.bg_stroke
+            // MEMBRANE: a dim version of the selection color, which the focused stroke uses.
+            Stroke::new(
+                1.0,
+                style.visuals.selection.stroke.color.gamma_multiply(0.2),
+            )
         };
 
         // The text of a text edit doesn't brighten on hover — that would be distracting while
