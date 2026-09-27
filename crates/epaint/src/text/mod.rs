@@ -8,8 +8,8 @@ mod text_layout_types;
 
 pub use {
     fonts::{
-        FontData, FontDefinitions, FontFamily, FontId, FontInsert, FontPriority, FontTweak, Fonts,
-        FontsImpl, FontsView, InsertFontFamily,
+        FontData, FontDefinitions, FontFamily, FontHinting, FontId, FontInsert, FontPriority,
+        FontTweak, Fonts, FontsImpl, FontsView, InsertFontFamily,
     },
     text_layout::*,
     text_layout_types::*,

@@ -189,7 +189,7 @@ pub struct FontTweak {
     /// Override the global font hinting setting for this specific font.
     ///
     /// `None` means use the global setting in [`TextOptions::font_hinting`].
-    pub hinting: Option<bool>,
+    pub hinting: Option<FontHinting>,
 
     /// Override the global sub-pixel binning setting for this specific font.
     ///
@@ -211,6 +211,24 @@ pub struct FontTweak {
     ///
     /// Default: `4.0`.
     pub tab_size: f32,
+}
+
+/// The hinting engine that fits the glyph outlines to the pixel grid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum FontHinting {
+    /// No hinting.
+    Off,
+
+    /// The hinting instructions in the font.
+    ///
+    /// A font without hinting instructions uses the automatic hinter.
+    On,
+
+    /// The automatic hinter. It ignores the hinting instructions in the font.
+    ///
+    /// Use it for a font with bad hinting instructions.
+    Auto,
 }
 
 impl Default for FontTweak {
