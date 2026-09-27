@@ -450,6 +450,10 @@ pub(crate) struct Prepared {
     layout: Layout,
     accessibility_label: Option<String>,
     accessibility_role: Option<crate::accesskit::Role>,
+
+    /// MEMBRANE: an area without a layer transform shows at the global pixels per point, even when
+    /// a scaled parent set a scoped value. The scope ends when `Prepared` drops.
+    _pixels_per_point: Option<crate::PixelsPerPointGuard>,
 }
 
 impl Area {
@@ -648,6 +652,10 @@ impl Area {
             layout,
             accessibility_label,
             accessibility_role,
+            _pixels_per_point: ctx
+                .layer_transform_to_global(layer_id)
+                .is_none()
+                .then(|| ctx.scoped_pixels_per_point(ctx.pixels_per_point())),
         }
     }
 }
