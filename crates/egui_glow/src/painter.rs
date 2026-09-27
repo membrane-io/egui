@@ -184,15 +184,30 @@ impl GlState {
         unsafe {
             gl.get_parameter_i32_slice(glow::VIEWPORT, &mut viewport);
             gl.get_parameter_i32_slice(glow::SCISSOR_BOX, &mut scissor_box);
+            // The web glow backend panics on a reverse lookup of a bound object (see
+            // `get_parameter_gl_name`: "A resource was created externally"). Every capture in this
+            // painter nests inside egui's own paint stream, and `prepare_painting` re-establishes
+            // that state on restore, so the web target does not read the parent objects back.
+            #[cfg(not(target_arch = "wasm32"))]
+            let (program, vertex_array, array_buffer, element_array_buffer, texture_2d) = (
+                gl.get_parameter_program(glow::CURRENT_PROGRAM),
+                gl.get_parameter_vertex_array(glow::VERTEX_ARRAY_BINDING),
+                gl.get_parameter_buffer(glow::ARRAY_BUFFER_BINDING),
+                gl.get_parameter_buffer(glow::ELEMENT_ARRAY_BUFFER_BINDING),
+                gl.get_parameter_texture(glow::TEXTURE_BINDING_2D),
+            );
+            #[cfg(target_arch = "wasm32")]
+            let (program, vertex_array, array_buffer, element_array_buffer, texture_2d) =
+                (None, None, None, None, None);
             Self {
                 framebuffer,
                 viewport,
                 scissor_box,
                 scissor_enabled: gl.is_enabled(glow::SCISSOR_TEST),
-                program: gl.get_parameter_program(glow::CURRENT_PROGRAM),
-                vertex_array: gl.get_parameter_vertex_array(glow::VERTEX_ARRAY_BINDING),
-                array_buffer: gl.get_parameter_buffer(glow::ARRAY_BUFFER_BINDING),
-                element_array_buffer: gl.get_parameter_buffer(glow::ELEMENT_ARRAY_BUFFER_BINDING),
+                program,
+                vertex_array,
+                array_buffer,
+                element_array_buffer,
                 blend_enabled: gl.is_enabled(glow::BLEND),
                 blend_equation_rgb: gl.get_parameter_i32(glow::BLEND_EQUATION_RGB) as u32,
                 blend_equation_alpha: gl.get_parameter_i32(glow::BLEND_EQUATION_ALPHA) as u32,
@@ -204,7 +219,7 @@ impl GlState {
                 cull_face_enabled: gl.is_enabled(glow::CULL_FACE),
                 color_mask: gl.get_parameter_bool_array(glow::COLOR_WRITEMASK),
                 active_texture: gl.get_parameter_i32(glow::ACTIVE_TEXTURE) as u32,
-                texture_2d: gl.get_parameter_texture(glow::TEXTURE_BINDING_2D),
+                texture_2d,
                 framebuffer_srgb_enabled: supports_srgb_framebuffer
                     && gl.is_enabled(glow::FRAMEBUFFER_SRGB),
             }
@@ -606,7 +621,10 @@ impl Painter {
 
         unsafe {
             target.parent_state.restore(self);
-            if target.parent_state.program == Some(self.program) {
+            // On the web backend the parent program is unknown, because `GlState` cannot read a
+            // bound object back. Every capture here nests inside egui's paint stream, so restore
+            // egui's painting state.
+            if target.parent_state.program == Some(self.program) || cfg!(target_arch = "wasm32") {
                 self.prepare_painting(target.parent_screen_size_px, target.pixels_per_point);
             }
         }
@@ -616,7 +634,15 @@ impl Painter {
             target.pixels_per_point,
             translate_clip_rect(clip_rect, -parent.origin.to_vec2()),
         );
-        if target.parent_state.scissor_enabled && target.parent_state.program != Some(self.program)
+        // Intersect with the parent scissor only when the parent painted with a custom program,
+        // because egui's own clip does not bound such a draw. On the web backend the parent program
+        // is unknown, and every capture here nests inside egui's paint stream, so treat the parent
+        // as egui and skip the intersect. This matches the `prepare_painting` branch above. Without
+        // this the popped clip intersects a stale scissor box left by the previous mesh, which drops
+        // the presented texture whenever that box does not cover the captured region.
+        if target.parent_state.scissor_enabled
+            && target.parent_state.program != Some(self.program)
+            && !cfg!(target_arch = "wasm32")
         {
             scissor = intersect_scissors(scissor, target.parent_state.scissor_box);
         }
