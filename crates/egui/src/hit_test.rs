@@ -114,12 +114,16 @@ pub fn hit_test(
     // but if the pointer is at the edge of a layer, we might include widgets in
     // a layer behind it.
 
+    // A widget that does not sense a click or a drag does not close the search.
+    // The block header hovers on a layer above the drag handle. The handle still
+    // receives the pointer there.
     let mut included_layers: ahash::HashSet<LayerId> = Default::default();
     for hit in close.iter().rev() {
         included_layers.insert(hit.layer_id);
-        let hit_covers_search_area = contains_circle(hit.interact_rect, pos, search_radius);
-        if hit_covers_search_area {
-            break; // nothing behind this layer could ever be interacted with
+        let seals_the_layer =
+            hit.sense.interactive() && contains_circle(hit.interact_rect, pos, search_radius);
+        if seals_the_layer {
+            break;
         }
     }
 
@@ -548,5 +552,47 @@ mod tests {
         let hits = hit_test_on_close(&widgets, pos2(65.0, 50.0));
         assert_eq!(hits.click.unwrap().id, Id::new("fg-right-label"));
         assert_eq!(hits.drag.unwrap().id, Id::new("fg-right-label"));
+    }
+
+    #[test]
+    fn hover_layer_does_not_hide_drag_behind() {
+        let back = LayerId::background();
+        let front = LayerId::new(crate::Order::Middle, Id::new("header"));
+        let body = Rect::from_min_size(pos2(0.0, 0.0), vec2(200.0, 200.0));
+        let header = Rect::from_min_size(pos2(0.0, 0.0), vec2(200.0, 40.0));
+        let mut widgets = WidgetRects::default();
+        let transforms = ahash::HashMap::default();
+        widgets.insert(
+            back,
+            WidgetRect {
+                layer_id: back,
+                ..wr(Id::new("drag"), Sense::click_and_drag(), body)
+            },
+            Default::default(),
+        );
+        widgets.insert(
+            front,
+            WidgetRect {
+                layer_id: front,
+                ..wr(Id::new("header"), Sense::hover(), header)
+            },
+            Default::default(),
+        );
+
+        let layers = [back, front];
+        let hits = hit_test(&widgets, &layers, &transforms, pos2(100.0, 20.0), 5.0);
+        assert_eq!(hits.drag.unwrap().id, Id::new("drag"));
+
+        widgets.insert(
+            front,
+            WidgetRect {
+                layer_id: front,
+                ..wr(Id::new("button"), Sense::click(), header)
+            },
+            Default::default(),
+        );
+        let hits = hit_test(&widgets, &layers, &transforms, pos2(100.0, 20.0), 5.0);
+        assert_eq!(hits.click.unwrap().id, Id::new("button"));
+        assert!(hits.drag.is_none());
     }
 }
