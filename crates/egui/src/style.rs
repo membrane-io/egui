@@ -4,7 +4,7 @@ use core::ops::RangeInclusive;
 use emath::Align;
 use epaint::{
     CornerRadius, FontColorTransferFunction, Shadow, Stroke, TextOptions,
-    text::{FontTweak, FontVariationAxis, HintingTarget, SmoothHinting},
+    text::{FontHinting, FontTweak, FontVariationAxis, HintingTarget, SmoothHinting},
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -3061,8 +3061,9 @@ pub fn font_tweak_ui(ui: &mut Ui, tweak: &mut FontTweak, axes: &[FontVariationAx
 
             ui.label("hinting");
             ui.horizontal(|ui| {
-                ui.radio_value(hinting, Some(true), "on");
-                ui.radio_value(hinting, Some(false), "off");
+                ui.radio_value(hinting, Some(FontHinting::On), "on");
+                ui.radio_value(hinting, Some(FontHinting::Off), "off");
+                ui.radio_value(hinting, Some(FontHinting::Auto), "auto");
                 ui.radio_value(hinting, None, "default");
             });
             ui.end_row();
