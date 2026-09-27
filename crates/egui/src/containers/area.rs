@@ -415,6 +415,10 @@ pub(crate) struct Prepared {
 
     fade_in: bool,
     layout: Layout,
+
+    /// MEMBRANE: an area without a layer transform shows at the global pixels per point, even when
+    /// a scaled parent set a scoped value. The scope ends when `Prepared` drops.
+    _pixels_per_point: Option<crate::PixelsPerPointGuard>,
 }
 
 impl Area {
@@ -600,6 +604,10 @@ impl Area {
             sizing_pass,
             fade_in,
             layout,
+            _pixels_per_point: ctx
+                .layer_transform_to_global(layer_id)
+                .is_none()
+                .then(|| ctx.scoped_pixels_per_point(ctx.pixels_per_point())),
         }
     }
 }
