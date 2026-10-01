@@ -729,7 +729,9 @@ fn line_break(
 
                 // Start a new row:
                 row_start_idx = last_kept_index + 1;
-                row_start_x = paragraph.glyphs[row_start_idx].pos.x;
+                // MEMBRANE: a wrapped row that starts a section keeps the leading space of the section.
+                row_start_x = paragraph.glyphs[row_start_idx].pos.x
+                    - section_leading_space(job, &paragraph.glyphs, row_start_idx);
                 row_break_candidates.forget_before_idx(row_start_idx);
             } else {
                 // Found no place to break, so we have to overrun wrap_width.
@@ -777,6 +779,20 @@ fn line_break(
                 ends_with_newline: false,
             });
         }
+    }
+}
+
+/// MEMBRANE: the [`LeadingSpace::FirstRow`] space before the glyph at `index`, if that glyph is the first glyph of its
+/// section. A wrapped row that starts with this glyph keeps the space, because that row is the first row of the
+/// section.
+fn section_leading_space(job: &LayoutJob, glyphs: &[Glyph], index: usize) -> f32 {
+    let glyph = &glyphs[index];
+    if index > 0 && glyphs[index - 1].section_index == glyph.section_index {
+        return 0.0;
+    }
+    match job.sections[glyph.section_index as usize].leading_space {
+        super::LeadingSpace::FirstRow(value) => value,
+        super::LeadingSpace::Indent(_) => 0.0,
     }
 }
 
@@ -1585,6 +1601,22 @@ mod tests {
             galley.rows.iter().map(|row| row.text()).collect::<Vec<_>>(),
             vec!["日本語とEnglish", "の混在した文章"]
         );
+    }
+
+    #[test]
+    fn test_wrapped_section_keeps_leading_space() {
+        let pixels_per_point = 1.0;
+        let mut fonts = FontsImpl::new(TextOptions::default(), FontDefinitions::default());
+        let mut layout_job = LayoutJob::default();
+        layout_job.append("aaaa aaaa ", 0.0, TextFormat::default());
+        layout_job.append("bbbb", 20.0, TextFormat::default());
+        layout_job.append(" cccc", 0.0, TextFormat::default());
+        layout_job.wrap.max_width = 70.0;
+        let galley = layout(&mut fonts, pixels_per_point, layout_job.into());
+        let rows: Vec<_> = galley.rows.iter().map(|row| row.text()).collect();
+        assert_eq!(rows[0], "aaaa aaaa ");
+        assert!(rows[1].starts_with("bbbb"));
+        assert_eq!(galley.rows[1].glyphs[0].pos.x, 20.0);
     }
 
     #[test]
