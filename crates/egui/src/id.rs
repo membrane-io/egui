@@ -67,7 +67,7 @@ impl Id {
     pub fn new(source: impl AsId) -> Self {
         let id = Self::from_hash(ahash::RandomState::with_seeds(1, 2, 3, 4).hash_one(&source));
 
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "id-source")]
         id_source::insert_root(id, &source);
 
         id
@@ -81,7 +81,7 @@ impl Id {
         hasher.write_u64(IdSalt::new(&salt).value());
         let id = Self::from_hash(hasher.finish());
 
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "id-source")]
         id_source::insert_child(id, self, &salt);
 
         id
@@ -129,7 +129,7 @@ impl std::fmt::Debug for Id {
         if *self == Self::NULL {
             return write!(f, "Id::NULL");
         }
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "id-source")]
         if let Some(source) = id_source::get(*self) {
             return f.write_str(&source);
         }
@@ -164,11 +164,11 @@ pub type IdMap<V> = nohash_hasher::IntMap<Id, V>;
 
 // ----------------------------------------------------------------------------
 
-/// In debug builds, remember the `Debug`-formatted call chain that produced each [`Id`].
+/// With the `id-source` feature, remember the `Debug`-formatted call chain that produced each [`Id`].
 ///
 /// Used by [`Id`]'s `Debug` impl so that `Id::new("foo")` prints as `Id::new("foo")`,
 /// and `Id::new("foo").with("bar")` prints as `Id::new("foo").with("bar")`, etc.
-#[cfg(debug_assertions)]
+#[cfg(feature = "id-source")]
 mod id_source {
     use super::{AsId, AsIdSalt, Id, IdMap};
     use epaint::mutex::RwLock;
@@ -209,7 +209,7 @@ fn id_size() {
 }
 
 #[cfg(test)]
-#[cfg(debug_assertions)]
+#[cfg(feature = "id-source")]
 mod debug_format_tests {
     use crate::IdSalt;
 
