@@ -91,7 +91,7 @@ impl Id {
     pub fn unique(source: impl core::hash::Hash + core::fmt::Debug) -> Self {
         let id = Self::from_hash(ahash::RandomState::with_seeds(1, 2, 3, 4).hash_one(&source));
 
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "id-source")]
         id_source::insert_root(id, &source);
 
         id
@@ -121,7 +121,7 @@ impl Id {
     pub fn with(self, salt: impl AsIdSalt) -> Self {
         let id = self.hash_with_salt(IdSalt::new(&salt));
 
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "id-source")]
         id_source::insert_child(id, self, &salt);
 
         id
@@ -133,7 +133,7 @@ impl Id {
     pub fn with_salt(self, salt: IdSalt) -> Self {
         let id = self.hash_with_salt(salt);
 
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "id-source")]
         id_source::insert_child(id, self, &salt);
 
         id
@@ -189,7 +189,7 @@ impl core::fmt::Debug for Id {
         if *self == Self::NULL {
             return write!(f, "Id::NULL");
         }
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "id-source")]
         if let Some(source) = id_source::get(*self) {
             return f.write_str(&source);
         }
@@ -207,11 +207,11 @@ pub type IdMap<V> = nohash_hasher::IntMap<Id, V>;
 
 // ----------------------------------------------------------------------------
 
-/// In debug builds, remember the `Debug`-formatted call chain that produced each [`Id`].
+/// With the `id-source` feature, remember the `Debug`-formatted call chain that produced each [`Id`].
 ///
 /// Used by [`Id`]'s `Debug` impl so that `Id::unique("foo")` prints as `Id::unique("foo")`,
 /// and `Id::unique("foo").with("bar")` prints as `Id::unique("foo").with("bar")`, etc.
-#[cfg(debug_assertions)]
+#[cfg(feature = "id-source")]
 pub(crate) mod id_source {
     use super::{AsIdSalt, Id, IdMap};
     use epaint::mutex::RwLock;
@@ -268,7 +268,7 @@ fn id_size() {
 }
 
 #[cfg(test)]
-#[cfg(debug_assertions)]
+#[cfg(feature = "id-source")]
 mod debug_format_tests {
     use crate::IdSalt;
 

@@ -43,7 +43,7 @@ impl IdSalt {
     pub fn new(source: impl AsIdSalt) -> Self {
         let id_salt = Self::from_hash(ahash::RandomState::with_seeds(5, 6, 7, 8).hash_one(&source));
 
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "id-source")]
         id_salt_source::maybe_insert(id_salt, &source);
 
         id_salt
@@ -70,7 +70,7 @@ impl IdSalt {
 
 impl core::fmt::Debug for IdSalt {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "id-source")]
         if let Some(source) = id_salt_source::get(*self) {
             return write!(f, "IdSalt::new({source})");
         }
@@ -93,7 +93,7 @@ pub type IdSaltMap<V> = nohash_hasher::IntMap<IdSalt, V>;
 /// Used by [`IdSalt`]'s `Debug` impl so that `IdSalt::new("foo")` prints as
 /// `IdSalt::new("foo")`, and `IdSalt::new(IdSalt::new("foo"))` prints as
 /// `IdSalt::new(IdSalt::new("foo"))`, etc.
-#[cfg(debug_assertions)]
+#[cfg(feature = "id-source")]
 mod id_salt_source {
     use super::{AsIdSalt, IdSalt};
     use epaint::mutex::RwLock;
@@ -115,7 +115,7 @@ mod id_salt_source {
 }
 
 #[cfg(test)]
-#[cfg(debug_assertions)]
+#[cfg(feature = "id-source")]
 mod tests {
     use super::IdSalt;
 
