@@ -11,8 +11,25 @@ use super::web_painter::WebPainter;
 
 pub(crate) struct WebPainterGlow {
     canvas: HtmlCanvasElement,
+    gl_context: RawWebGlContext,
     painter: egui_glow::Painter,
     screenshots: Vec<(egui::ColorImage, Vec<UserData>)>,
+}
+
+enum RawWebGlContext {
+    WebGl1(web_sys::WebGlRenderingContext),
+    WebGl2(web_sys::WebGl2RenderingContext),
+}
+
+impl RawWebGlContext {
+    fn framebuffer(&self) -> Option<web_sys::WebGlFramebuffer> {
+        let value = match self {
+            Self::WebGl1(gl) => gl.get_parameter(glow::FRAMEBUFFER_BINDING),
+            Self::WebGl2(gl) => gl.get_parameter(glow::FRAMEBUFFER_BINDING),
+        }
+        .ok()?;
+        value.dyn_into().ok()
+    }
 }
 
 impl WebPainterGlow {
@@ -25,7 +42,7 @@ impl WebPainterGlow {
         canvas: HtmlCanvasElement,
         options: &WebOptions,
     ) -> Result<Self, String> {
-        let (gl, shader_prefix) =
+        let (gl, shader_prefix, gl_context) =
             init_glow_context_from_canvas(&canvas, options.webgl_context_option)?;
 
         #[allow(clippy::allow_attributes, clippy::arc_with_non_send_sync)] // For wasm
@@ -41,6 +58,7 @@ impl WebPainterGlow {
 
         Ok(Self {
             canvas,
+            gl_context,
             painter,
             screenshots: Vec::new(),
         })
@@ -70,6 +88,8 @@ impl WebPainter for WebPainterGlow {
             self.painter.set_texture(*id, image_delta);
         }
 
+        self.painter
+            .set_external_framebuffer(self.gl_context.framebuffer());
         egui_glow::painter::clear(self.painter.gl(), canvas_dimension, clear_color);
         self.painter
             .paint_primitives(canvas_dimension, pixels_per_point, clipped_primitives);
@@ -108,7 +128,7 @@ impl WebPainter for WebPainterGlow {
 fn init_glow_context_from_canvas(
     canvas: &HtmlCanvasElement,
     options: WebGlContextOption,
-) -> Result<(glow::Context, &'static str), String> {
+) -> Result<(glow::Context, &'static str, RawWebGlContext), String> {
     let result = match options {
         // Force use WebGl1
         WebGlContextOption::WebGl1 => init_webgl1(canvas),
@@ -129,7 +149,9 @@ fn init_glow_context_from_canvas(
     }
 }
 
-fn init_webgl1(canvas: &HtmlCanvasElement) -> Option<(glow::Context, &'static str)> {
+fn init_webgl1(
+    canvas: &HtmlCanvasElement,
+) -> Option<(glow::Context, &'static str, RawWebGlContext)> {
     let gl1_ctx = canvas
         .get_context("webgl")
         .expect("Failed to query about WebGL2 context");
@@ -148,12 +170,14 @@ fn init_webgl1(canvas: &HtmlCanvasElement) -> Option<(glow::Context, &'static st
         ""
     };
 
-    let gl = glow::Context::from_webgl1_context(gl1_ctx);
+    let gl = glow::Context::from_webgl1_context(gl1_ctx.clone());
 
-    Some((gl, shader_prefix))
+    Some((gl, shader_prefix, RawWebGlContext::WebGl1(gl1_ctx)))
 }
 
-fn init_webgl2(canvas: &HtmlCanvasElement) -> Option<(glow::Context, &'static str)> {
+fn init_webgl2(
+    canvas: &HtmlCanvasElement,
+) -> Option<(glow::Context, &'static str, RawWebGlContext)> {
     let gl2_ctx = canvas
         .get_context("webgl2")
         .expect("Failed to query about WebGL2 context");
@@ -164,10 +188,10 @@ fn init_webgl2(canvas: &HtmlCanvasElement) -> Option<(glow::Context, &'static st
     let gl2_ctx = gl2_ctx
         .dyn_into::<web_sys::WebGl2RenderingContext>()
         .unwrap();
-    let gl = glow::Context::from_webgl2_context(gl2_ctx);
+    let gl = glow::Context::from_webgl2_context(gl2_ctx.clone());
     let shader_prefix = "";
 
-    Some((gl, shader_prefix))
+    Some((gl, shader_prefix, RawWebGlContext::WebGl2(gl2_ctx)))
 }
 
 fn webgl1_requires_brightening(gl: &web_sys::WebGlRenderingContext) -> bool {

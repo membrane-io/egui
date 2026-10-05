@@ -1390,6 +1390,7 @@ dependencies = [
  "log",
  "memoffset",
  "profiling",
+ "web-sys",
  "winit",
 ]
 

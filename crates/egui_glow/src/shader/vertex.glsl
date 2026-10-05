@@ -19,6 +19,7 @@
 #endif
 
 uniform vec2 u_screen_size;
+uniform vec2 u_screen_origin;
 I vec2 a_pos;
 I vec4 a_srgba; // 0-255 sRGB
 I vec2 a_tc;
@@ -26,9 +27,10 @@ O vec4 v_rgba_in_gamma;
 O vec2 v_tc;
 
 void main() {
+    vec2 local_pos = a_pos - u_screen_origin;
     gl_Position = vec4(
-                      2.0 * a_pos.x / u_screen_size.x - 1.0,
-                      1.0 - 2.0 * a_pos.y / u_screen_size.y,
+                      2.0 * local_pos.x / u_screen_size.x - 1.0,
+                      1.0 - 2.0 * local_pos.y / u_screen_size.y,
                       0.0,
                       1.0);
     v_rgba_in_gamma = a_srgba / 255.0;

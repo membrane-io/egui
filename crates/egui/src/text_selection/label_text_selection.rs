@@ -103,6 +103,10 @@ pub struct LabelSelectionState {
 
     /// Accumulated text to copy.
     text_to_copy: String,
+
+    /// MEMBRANE: Whether this pass has a secondary click. In such a pass the labels collect the
+    /// selected text into `text_to_copy`, so that a context menu can offer a copy action.
+    secondary_clicked: bool,
     last_copied_galley_rect: Option<Rect>,
 
     /// Painted selections this frame.
@@ -122,6 +126,7 @@ impl Default for LabelSelectionState {
             has_reached_primary: Default::default(),
             has_reached_secondary: Default::default(),
             text_to_copy: Default::default(),
+            secondary_clicked: false,
             last_copied_galley_rect: Default::default(),
             painted_selections: Default::default(),
         }
@@ -146,6 +151,7 @@ impl Plugin for LabelSelectionState {
         self.has_reached_primary = false;
         self.has_reached_secondary = false;
         self.text_to_copy.clear();
+        self.secondary_clicked = ui.input(|i| i.pointer.secondary_clicked());
         self.last_copied_galley_rect = None;
         self.painted_selections.clear();
     }
@@ -208,7 +214,8 @@ impl Plugin for LabelSelectionState {
         }
 
         let text_to_copy = std::mem::take(&mut self.text_to_copy);
-        if !text_to_copy.is_empty() {
+        // MEMBRANE: A secondary click also collects the text. Only a copy event puts it on the clipboard.
+        if !text_to_copy.is_empty() && got_copy_event(ui.ctx()) {
             ui.copy_text(text_to_copy);
         }
     }
@@ -221,6 +228,12 @@ impl LabelSelectionState {
 
     pub fn clear_selection(&mut self) {
         self.selection = None;
+    }
+
+    /// MEMBRANE: The selected text in a pass that has a secondary click. It holds only the text of
+    /// the labels that already showed in this pass. A context menu reads it to offer a copy action.
+    pub fn secondary_click_text(&self) -> Option<&str> {
+        (self.secondary_clicked && !self.text_to_copy.is_empty()).then_some(self.text_to_copy.as_str())
     }
 
     /// MEMBRANE: Whether any label is being hovered, this can be used to disambiguate
@@ -520,7 +533,9 @@ impl LabelSelectionState {
         }
 
         self.any_hovered |= response.hovered();
-        self.is_dragging |= response.is_pointer_button_down_on(); // we don't want the initial latency of drag vs click decision
+        // MEMBRANE: Only the primary button selects text. A secondary press must keep the selection
+        // for the context menu.
+        self.is_dragging |= response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()); // we don't want the initial latency of drag vs click decision
 
         let old_selection = self.selection;
 
@@ -551,7 +566,8 @@ impl LabelSelectionState {
                 process_selection_key_events(ui.ctx(), galley, response.id, &mut cursor_range);
             }
 
-            if got_copy_event(ui.ctx()) {
+            // MEMBRANE: A secondary click also collects the text, see `secondary_click_text`.
+            if self.secondary_clicked || got_copy_event(ui.ctx()) {
                 self.copy_text(galley_rect, galley, &cursor_range);
             }
 

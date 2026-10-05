@@ -76,7 +76,13 @@ impl TextCursorState {
             self.set_char_range(Some(ccursor_range));
             true
         } else if response.sense.senses_drag() {
-            if response.hovered() && ui.input(|i| i.pointer.any_pressed()) {
+            // MEMBRANE: A secondary press does not move the cursor, so a right click keeps the selection
+            // for the context menu.
+            if response.hovered()
+                && ui.input(|i| {
+                    i.pointer.any_pressed() && !i.pointer.button_pressed(crate::PointerButton::Secondary)
+                })
+            {
                 // The start of a drag (or a click).
                 if ui.input(|i| i.modifiers.shift) {
                     if let Some(mut cursor_range) = self.range(galley) {

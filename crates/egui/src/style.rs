@@ -4,7 +4,7 @@ use emath::Align;
 use epaint::{
     CornerRadius, FontColorTransferFunction, Shadow, Stroke, TextOptions,
     mutex::Mutex,
-    text::{FontTweak, Tag},
+    text::{FontHinting, FontTweak, Tag},
 };
 use std::{collections::BTreeMap, ops::RangeInclusive, sync::Arc};
 
@@ -2925,8 +2925,9 @@ impl Widget for &mut FontTweak {
 
                 ui.label("hinting");
                 ui.horizontal(|ui| {
-                    ui.radio_value(hinting, Some(true), "on");
-                    ui.radio_value(hinting, Some(false), "off");
+                    ui.radio_value(hinting, Some(FontHinting::On), "on");
+                    ui.radio_value(hinting, Some(FontHinting::Off), "off");
+                    ui.radio_value(hinting, Some(FontHinting::Auto), "auto");
                     ui.radio_value(hinting, None, "default");
                 });
                 ui.end_row();

@@ -10,7 +10,7 @@ use vello_cpu::{color, kurbo};
 use crate::{
     TextOptions, TextureAtlas,
     text::{
-        FontTweak, VariationCoords,
+        FontHinting, FontTweak, VariationCoords,
         fonts::{Blob, CachedFamily, FontFaceKey},
     },
 };
@@ -200,7 +200,14 @@ struct DependentFontData<'a> {
     charmap: skrifa::charmap::Charmap<'a>,
     outline_glyphs: skrifa::outline::OutlineGlyphCollection<'a>,
     metrics: skrifa::metrics::Metrics,
-    hinting_instance: Option<skrifa::outline::HintingInstance>,
+    hinter: Option<Hinter>,
+}
+
+struct Hinter {
+    instance: skrifa::outline::HintingInstance,
+
+    /// The instance does not keep its engine, so each `reconfigure` needs these options again.
+    options: skrifa::outline::HintingOptions,
 }
 
 self_cell! {
@@ -240,25 +247,22 @@ impl FontCell {
         self.with_dependent_mut(|_, font_data| {
             let outline = font_data.outline_glyphs.get(glyph_id)?;
 
-            if let Some(hinting_instance) = &mut font_data.hinting_instance {
+            if let Some(hinter) = &mut font_data.hinter {
                 let size = skrifa::instance::Size::new(metrics.scale);
-                if hinting_instance.size() != size
-                    || hinting_instance.location().coords() != location.coords()
+                if hinter.instance.size() != size
+                    || hinter.instance.location().coords() != location.coords()
                 {
-                    hinting_instance
+                    hinter
+                        .instance
                         .reconfigure(
                             &font_data.outline_glyphs,
                             size,
                             location,
-                            skrifa::outline::Target::Smooth {
-                                mode: skrifa::outline::SmoothMode::Normal,
-                                symmetric_rendering: true,
-                                preserve_linear_metrics: true,
-                            },
+                            hinter.options.clone(),
                         )
                         .ok()?;
                 }
-                let draw_settings = skrifa::outline::DrawSettings::hinted(hinting_instance, false);
+                let draw_settings = skrifa::outline::DrawSettings::hinted(&hinter.instance, false);
                 outline.draw(draw_settings, &mut pen).ok()?;
             } else {
                 let draw_settings = skrifa::outline::DrawSettings::unhinted(
@@ -407,27 +411,46 @@ impl FontFace {
                 skrifa::instance::LocationRef::default(),
             );
 
-            let hinting_enabled = tweak.hinting.unwrap_or(options.font_hinting);
-            let hinting_instance = hinting_enabled
-                .then(|| {
-                    // It doesn't really matter what we put here for options. Since the size is `unscaled()`, we will
-                    // always reconfigure this hinting instance with the real options when rendering for the first time.
-                    skrifa::outline::HintingInstance::new(
-                        &glyphs,
-                        skrifa::instance::Size::unscaled(),
-                        skrifa::instance::LocationRef::default(),
-                        skrifa::outline::Target::default(),
-                    )
-                    .ok()
-                })
-                .flatten();
+            let hinting = tweak.hinting.unwrap_or(if options.font_hinting {
+                FontHinting::On
+            } else {
+                FontHinting::Off
+            });
+            let engine = match hinting {
+                FontHinting::Off => None,
+                FontHinting::On => Some(skrifa::outline::Engine::AutoFallback),
+                // Calculate the glyph styles once. Else the automatic hinter calculates them again
+                // at each `reconfigure`.
+                FontHinting::Auto => Some(skrifa::outline::Engine::Auto(Some(
+                    skrifa::outline::GlyphStyles::new(&glyphs),
+                ))),
+            };
+            let hinter = engine.and_then(|engine| {
+                let options = skrifa::outline::HintingOptions {
+                    engine,
+                    target: skrifa::outline::Target::Smooth {
+                        mode: skrifa::outline::SmoothMode::Normal,
+                        symmetric_rendering: true,
+                        preserve_linear_metrics: true,
+                    },
+                };
+                // The size is `unscaled()`, so the first render reconfigures the instance for the real size.
+                let instance = skrifa::outline::HintingInstance::new(
+                    &glyphs,
+                    skrifa::instance::Size::unscaled(),
+                    skrifa::instance::LocationRef::default(),
+                    options.clone(),
+                )
+                .ok()?;
+                Some(Hinter { instance, options })
+            });
 
             Ok::<DependentFontData<'_>, Box<dyn std::error::Error>>(DependentFontData {
                 skrifa: skrifa_font,
                 charmap,
                 outline_glyphs: glyphs,
                 metrics,
-                hinting_instance,
+                hinter,
             })
         })?;
 
