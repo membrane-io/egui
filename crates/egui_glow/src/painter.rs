@@ -563,7 +563,9 @@ impl Painter {
         rect.translate(origin.to_vec2())
     }
 
-    /// Redirect subsequent egui primitives to `framebuffer`.
+    /// Redirect subsequent egui primitives to `framebuffer`, after a fill with `clear_color`.
+    ///
+    /// `clear_color` is premultiplied and in gamma space, as [`egui::Color32`] is.
     pub fn push_render_target(
         &self,
         framebuffer: glow::Framebuffer,
@@ -571,6 +573,7 @@ impl Painter {
         screen_size_px: [u32; 2],
         parent_screen_size_px: [u32; 2],
         pixels_per_point: f32,
+        clear_color: egui::Color32,
     ) -> bool {
         if !rect.is_positive() || screen_size_px.contains(&0) {
             return false;
@@ -594,10 +597,11 @@ impl Painter {
             parent_state,
         });
         drop(targets);
+        let [r, g, b, a] = clear_color.to_normalized_gamma_f32();
         unsafe {
             self.prepare_painting(parent_screen_size_px, pixels_per_point);
             self.gl.disable(glow::SCISSOR_TEST);
-            self.gl.clear_color(0.0, 0.0, 0.0, 0.0);
+            self.gl.clear_color(r, g, b, a);
             self.gl.clear(glow::COLOR_BUFFER_BIT);
             self.gl.enable(glow::SCISSOR_TEST);
         }
