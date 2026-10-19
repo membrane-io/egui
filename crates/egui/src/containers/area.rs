@@ -745,10 +745,12 @@ impl Prepared {
             move_response: mut response,
             sizing_pass,
             anchor,
+            constrain,
             constrain_rect,
             ..
         } = self;
 
+        let drawn_left_top = response.rect.min;
         let prev_size = state.size;
         let actual_size = content_ui.min_size();
         state.size = Some(actual_size);
@@ -765,19 +767,27 @@ impl Prepared {
             response.set_close();
         }
 
-        // MEMBRANE: If the area is anchored but its actual size is different from what was used for alignment,
-        // re-align it visually (this frame only) so that it stays anchored. This makes animations that change the
-        // size look correct.
-        if let Some((anchor, offset)) = anchor {
-            if prev_size != Some(actual_size) {
-                let adjusted_pos = anchor
+        // MEMBRANE: If the actual size is different from the size that `begin` used to place the area,
+        // move the shapes of this frame so that the anchor or the pivot stays in place. This makes
+        // animations that change the size look correct.
+        if !sizing_pass && prev_size != Some(actual_size) {
+            let mut left_top = if let Some((anchor, offset)) = anchor {
+                anchor
                     .align_size_within_rect(actual_size, constrain_rect)
                     .left_top()
-                    + offset;
-                let adjustment = adjusted_pos - content_ui.min_rect().left_top();
-                let transform = emath::TSTransform::from_translation(adjustment);
-                ctx.transform_layer_shapes(layer_id, transform);
+                    + offset
+            } else {
+                state.left_top_pos()
+            };
+            if constrain {
+                left_top = Context::constrain_window_rect_to_area(
+                    Rect::from_min_size(left_top, actual_size),
+                    constrain_rect,
+                )
+                .min;
             }
+            let adjustment = round_area_position(ctx, left_top) - drawn_left_top;
+            ctx.transform_layer_shapes(layer_id, emath::TSTransform::from_translation(adjustment));
         }
 
         ctx.memory_mut(|m| m.areas_mut().set_state(layer_id, state));
