@@ -372,8 +372,7 @@ struct ContextImpl {
     font_generation: usize,
 
     /// MEMBRANE: the stack that [`Context::scoped_pixels_per_point`] pushes to. The top value is
-    /// the `pixels_per_point` that text layout and pixel snapping use. See
-    /// [`Context::layout_pixels_per_point`].
+    /// the `pixels_per_point` that text layout uses. See [`Context::layout_pixels_per_point`].
     layout_pixels_per_point_stack: Vec<f32>,
 
     memory: Memory,
@@ -2335,9 +2334,9 @@ impl Context {
     /// now.
     ///
     /// This equals [`Self::pixels_per_point`] unless a [`PixelsPerPointGuard`] is active. Text
-    /// layout, [`crate::Painter`] and [`crate::Ui::pixels_per_point`] read this value, so a
-    /// scaled-down layer rasterizes its glyphs and snaps its geometry for the size it gets on
-    /// screen.
+    /// layout reads this value, so a scaled-down layer rasterizes its glyphs for the size they get
+    /// on screen. [`crate::Painter::pixels_per_point`] does not read it: the painter calculates its
+    /// value from the layer transform.
     ///
     /// Read [`Self::pixels_per_point`] instead for anything in global space: a pointer position,
     /// the viewport size, a texture size hint, or a rectangle that a layer transform already moved.
@@ -4512,10 +4511,41 @@ fn warn_if_rect_changes_id(
     }
 }
 
+/// MEMBRANE: the number of quantization steps for each doubling of the scale. See
+/// [`quantize_display_scale`].
+const DISPLAY_SCALE_STEPS_PER_OCTAVE: f32 = 8.0;
+
+/// MEMBRANE: the range of scales that [`quantize_display_scale`] accepts, as a factor of 1.0.
+const DISPLAY_SCALE_RANGE: std::ops::RangeInclusive<f32> = 0.25..=2.0;
+
+/// MEMBRANE: a scale this close to 1.0 keeps the glyphs of the unscaled text.
+const DISPLAY_SCALE_EPSILON: f32 = 0.02;
+
+/// MEMBRANE: round a layer scale to one of a small number of values.
+///
+/// A scaled layer rasterizes its glyphs at `pixels_per_point * scale`, and the font atlas keeps one
+/// bitmap for each distinct value it sees. The atlas never frees an entry: it can only drop every
+/// entry at once, which costs several frames. A zoom animation that used the exact scale of each
+/// frame would fill the atlas and force that cost in the middle of the animation.
+///
+/// The steps are 1/8 of an octave apart, so they sit about 9% apart and the worst residual resample
+/// is about 4.4%. Steps of a fixed size in `pixels_per_point` would be wrong here: a step of 1/8
+/// gives an error of 12.5% at 0.5 pixels per point, which is where the error hurts most.
+///
+/// [`crate::Painter::pixels_per_point`] uses the same steps, so the geometry of a layer snaps with
+/// the value that its text uses.
+pub fn quantize_display_scale(scale: f32) -> f32 {
+    if !scale.is_finite() || scale <= 0.0 || (scale - 1.0).abs() < DISPLAY_SCALE_EPSILON {
+        return 1.0;
+    }
+    let clamped = scale.clamp(*DISPLAY_SCALE_RANGE.start(), *DISPLAY_SCALE_RANGE.end());
+    let steps = (clamped.log2() * DISPLAY_SCALE_STEPS_PER_OCTAVE).round();
+    (steps / DISPLAY_SCALE_STEPS_PER_OCTAVE).exp2()
+}
+
 /// MEMBRANE: keeps [`Context::layout_pixels_per_point`] at a value until it drops.
 ///
-/// [`Context::scoped_pixels_per_point`] and [`Context::scoped_pixels_per_point_for_layer`] create
-/// one.
+/// [`Context::scoped_pixels_per_point`] creates one.
 pub struct PixelsPerPointGuard {
     ctx: Context,
 }
@@ -4531,7 +4561,8 @@ impl Drop for PixelsPerPointGuard {
 
 #[cfg(test)]
 mod test {
-    use super::{Color32, Context, Pos2, Ui, emath, epaint};
+    use super::{Color32, Context, Pos2, Ui, emath, epaint, quantize_display_scale};
+    use crate::{Id, LayerId, Order, UiBuilder};
 
     #[test]
     fn test_single_pass() {
@@ -4749,5 +4780,95 @@ mod test {
             shape.galley.pixels_per_point, 2.0,
             "One point of the global space now covers twice as many physical pixels"
         );
+    }
+
+    /// MEMBRANE: a child `Ui` on a layer without a scale snaps on the screen pixel grid, also when
+    /// its parent paints into a layer at scale 0.5.
+    #[test]
+    fn a_child_on_another_layer_snaps_with_the_scale_of_its_own_layer() {
+        let ctx = Context::default();
+        ctx.set_pixels_per_point(2.0);
+        let _ = ctx.run_ui(Default::default(), |_| {});
+
+        let mut child_pixels_per_point = None;
+        let _ = ctx.run_ui(Default::default(), |ui| {
+            let block_layer = LayerId::new(Order::Middle, Id::new("block"));
+            ui.ctx()
+                .set_transform_layer(block_layer, emath::TSTransform::from_scaling(0.5));
+            let _scope = ui.ctx().scoped_pixels_per_point(1.0);
+            let mut block = Ui::new(
+                ui.ctx().clone(),
+                Id::new("block"),
+                UiBuilder::new().layer_id(block_layer),
+            );
+
+            let header_layer = LayerId::new(Order::Middle, Id::new("header"));
+            let header = block.new_child(UiBuilder::new().layer_id(header_layer));
+            child_pixels_per_point = Some(header.pixels_per_point());
+        });
+
+        assert_eq!(child_pixels_per_point, Some(2.0));
+    }
+
+    /// MEMBRANE: a `Ui` snaps with the layer transform that the caller sets after it creates the
+    /// `Ui`.
+    #[test]
+    fn a_ui_snaps_with_a_layer_transform_set_after_it() {
+        let ctx = Context::default();
+        ctx.set_pixels_per_point(2.0);
+        let _ = ctx.run_ui(Default::default(), |_| {});
+
+        let mut pixels_per_point = None;
+        let _ = ctx.run_ui(Default::default(), |ui| {
+            let layer = LayerId::new(Order::Middle, Id::new("scaled"));
+            let scaled = ui.new_child(UiBuilder::new().layer_id(layer));
+            ui.ctx()
+                .set_transform_layer(layer, emath::TSTransform::from_scaling(0.5));
+            pixels_per_point = Some(scaled.pixels_per_point());
+        });
+
+        assert_eq!(pixels_per_point, Some(1.0));
+    }
+
+    #[test]
+    fn quantize_returns_one_near_one() {
+        assert_eq!(quantize_display_scale(1.0), 1.0);
+        assert_eq!(quantize_display_scale(0.99), 1.0);
+        assert_eq!(quantize_display_scale(1.015), 1.0);
+    }
+
+    #[test]
+    fn quantize_returns_a_step() {
+        // The steps are the eighth roots of two.
+        let step = 2.0_f32.powf(1.0 / 8.0);
+        assert!((quantize_display_scale(0.5) - 0.5).abs() < 1e-5);
+        assert!((quantize_display_scale(0.8) - step.powi(-3)).abs() < 1e-5);
+        assert!((quantize_display_scale(1.5) - step.powi(5)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn quantize_clamps_the_range() {
+        assert!((quantize_display_scale(0.01) - 0.25).abs() < 1e-5);
+        assert!((quantize_display_scale(9.0) - 2.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn quantize_rejects_a_bad_value() {
+        assert_eq!(quantize_display_scale(0.0), 1.0);
+        assert_eq!(quantize_display_scale(-1.0), 1.0);
+        assert_eq!(quantize_display_scale(f32::NAN), 1.0);
+    }
+
+    #[test]
+    fn quantize_stays_within_five_percent() {
+        let mut scale = 0.25;
+        while scale <= 2.0 {
+            let error = (quantize_display_scale(scale) / scale - 1.0).abs();
+            assert!(
+                error < 0.05,
+                "scale {scale} quantized with an error of {error}"
+            );
+            scale *= 1.001;
+        }
     }
 }

@@ -22,9 +22,6 @@ pub struct Painter {
     /// Source of fonts and destination of shapes
     ctx: Context,
 
-    /// For quick access, without having to go via [`Context`].
-    pixels_per_point: f32,
-
     /// Where we paint
     layer_id: LayerId,
 
@@ -45,12 +42,8 @@ pub struct Painter {
 impl Painter {
     /// Create a painter to a specific layer within a certain clip rectangle.
     pub fn new(ctx: Context, layer_id: LayerId, clip_rect: Rect) -> Self {
-        // MEMBRANE: a painter paints into one layer, so it snaps geometry with the value of that
-        // layer. See `Context::layout_pixels_per_point`.
-        let pixels_per_point = ctx.layout_pixels_per_point();
         Self {
             ctx,
-            pixels_per_point,
             layer_id,
             clip_rect,
             fade_to_color: None,
@@ -139,11 +132,16 @@ impl Painter {
 
     /// Number of physical pixels for each logical UI point of the layer this painter paints into.
     ///
-    /// MEMBRANE: this is [`Context::layout_pixels_per_point`], which differs from
-    /// [`Context::pixels_per_point`] inside a [`crate::PixelsPerPointGuard`] scope.
-    #[inline]
+    /// MEMBRANE: this is [`Context::pixels_per_point`] times the quantized scale of the layer
+    /// transform, so the geometry snaps to the physical pixel grid of the layer. The painter reads
+    /// the layer transform at each call, so the caller can call [`Context::set_transform_layer`]
+    /// after it creates the painter. See [`crate::quantize_display_scale`].
     pub fn pixels_per_point(&self) -> f32 {
-        self.pixels_per_point
+        let scale = self
+            .ctx
+            .layer_transform_to_global(self.layer_id)
+            .map_or(1.0, |transform| transform.scaling);
+        self.ctx.pixels_per_point() * crate::quantize_display_scale(scale)
     }
 
     /// Read-only access to the shared [`FontsView`].

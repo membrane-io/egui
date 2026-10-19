@@ -466,7 +466,9 @@ pub use epaint::MarginF32;
 pub use self::{
     atomics::*,
     containers::{menu::MenuBar, *},
-    context::{Context, PixelsPerPointGuard, RepaintCause, RequestRepaintInfo},
+    context::{
+        Context, PixelsPerPointGuard, RepaintCause, RequestRepaintInfo, quantize_display_scale,
+    },
     data::{
         Key, UserData,
         input::*,
