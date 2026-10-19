@@ -489,7 +489,9 @@ pub use self::{
         menu::{self, MenuBar},
         modal, panel, scroll_area,
     },
-    context::{Context, PixelsPerPointGuard, RepaintCause, RequestRepaintInfo},
+    context::{
+        Context, PixelsPerPointGuard, RepaintCause, RequestRepaintInfo, quantize_display_scale,
+    },
     data::{
         Key, ScreenshotCallback,
         input::{
