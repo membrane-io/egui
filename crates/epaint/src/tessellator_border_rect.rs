@@ -22,7 +22,7 @@ use core::f32::consts::{FRAC_PI_2, TAU};
 use emath::{GuiRounding as _, NumExt as _, Pos2, Rect, Vec2, vec2};
 
 use super::{Tessellator, mul_color, path};
-use crate::{BorderRectShape, Color32, CornerRadiusF32, Mesh, RectShape};
+use crate::{BorderRectShape, Color32, CornerRadiusF32, MarginF32, Mesh, RectShape, SideColors};
 
 /// A point of the outer edge of the outline.
 #[derive(Clone, Copy, Debug)]
@@ -96,9 +96,25 @@ impl Tessellator {
             mut rect,
             corner_radius,
             fill,
-            stroke_width: w,
+            stroke_width,
             stroke_color: c,
         } = *shape;
+
+        // `tessellate_rect` paints no stroke when the stroke color is transparent, and the fill
+        // then covers the area of the stroke. A side with a transparent color does the same.
+        let visible = |width: f32, color: Color32| {
+            if color == Color32::TRANSPARENT {
+                0.0
+            } else {
+                width
+            }
+        };
+        let w = MarginF32 {
+            left: visible(stroke_width.left, c.left),
+            right: visible(stroke_width.right, c.right),
+            top: visible(stroke_width.top, c.top),
+            bottom: visible(stroke_width.bottom, c.bottom),
+        };
 
         // It is common to create a rectangle with an infinite size. `tessellate_rect` does the same.
         rect.min = rect.min.at_least(emath::pos2(-1e7, -1e7));
@@ -132,7 +148,7 @@ impl Tessellator {
             rect = rect.round_to_pixels(self.pixels_per_point);
         }
 
-        let corners = corners(rect, corner_radius, shape);
+        let corners = corners(rect, corner_radius, w, c, stroke_width);
         let mut points = Vec::with_capacity(4 * 36);
         for corner in &corners {
             add_corner_points(&mut points, corner);
@@ -211,9 +227,16 @@ impl Tessellator {
 
 /// The four corners in the order of [`path::rounded_rectangle`]: south east, south west, north west
 /// and north east.
-fn corners(rect: Rect, corner_radius: crate::CornerRadius, shape: &BorderRectShape) -> [Corner; 4] {
-    let w = shape.stroke_width;
-    let c = shape.stroke_color;
+///
+/// `w` holds the width that each side paints. `radius_w` holds the width that each side has in the
+/// shape, also when the side is transparent, because `tessellate_rect` changes the radius for it.
+fn corners(
+    rect: Rect,
+    corner_radius: crate::CornerRadius,
+    w: MarginF32,
+    c: SideColors,
+    radius_w: MarginF32,
+) -> [Corner; 4] {
     let original = CornerRadiusF32::from(corner_radius);
 
     // `tessellate_rect` makes the same change to the radius of a corner. A radius that is smaller
@@ -235,7 +258,7 @@ fn corners(rect: Rect, corner_radius: crate::CornerRadius, shape: &BorderRectSha
             pos: max,
             inward: vec2(-1.0, -1.0),
             quadrant: 0.0,
-            radius: radius(original.se, w.right, w.bottom),
+            radius: radius(original.se, radius_w.right, radius_w.bottom),
             width_x: w.right,
             width_y: w.bottom,
             width_before: w.right,
@@ -247,7 +270,7 @@ fn corners(rect: Rect, corner_radius: crate::CornerRadius, shape: &BorderRectSha
             pos: emath::pos2(min.x, max.y),
             inward: vec2(1.0, -1.0),
             quadrant: 1.0,
-            radius: radius(original.sw, w.left, w.bottom),
+            radius: radius(original.sw, radius_w.left, radius_w.bottom),
             width_x: w.left,
             width_y: w.bottom,
             width_before: w.bottom,
@@ -259,7 +282,7 @@ fn corners(rect: Rect, corner_radius: crate::CornerRadius, shape: &BorderRectSha
             pos: min,
             inward: vec2(1.0, 1.0),
             quadrant: 2.0,
-            radius: radius(original.nw, w.left, w.top),
+            radius: radius(original.nw, radius_w.left, radius_w.top),
             width_x: w.left,
             width_y: w.top,
             width_before: w.left,
@@ -271,7 +294,7 @@ fn corners(rect: Rect, corner_radius: crate::CornerRadius, shape: &BorderRectSha
             pos: emath::pos2(max.x, min.y),
             inward: vec2(-1.0, 1.0),
             quadrant: 3.0,
-            radius: radius(original.ne, w.right, w.top),
+            radius: radius(original.ne, radius_w.right, radius_w.top),
             width_x: w.right,
             width_y: w.top,
             width_before: w.top,
@@ -457,6 +480,7 @@ mod tests {
                         for color in [
                             Color32::from_rgb(230, 120, 30),
                             Color32::from_white_alpha(60),
+                            Color32::TRANSPARENT,
                         ] {
                             let rect_shape = RectShape::new(
                                 rect,
@@ -580,6 +604,43 @@ mod tests {
         let half = size[0] * 2 * 30;
         let difference = largest_difference(&actual[..half], &expected[..half]);
         assert!(difference <= 0.1, "largest difference {difference}");
+    }
+
+    #[test]
+    fn a_transparent_side_paints_the_fill_under_it() {
+        // The bottom side is 4 wide and transparent, so its area looks like a filled rect.
+        let rect = Rect::from_min_size(pos2(10.0, 10.0), vec2(60.0, 40.0));
+        let fill = Color32::from_gray(50);
+        let shape = BorderRectShape::new(
+            rect,
+            8,
+            fill,
+            MarginF32::same(4.0),
+            SideColors {
+                bottom: Color32::TRANSPARENT,
+                ..SideColors::same(Color32::WHITE)
+            },
+        );
+        let mut actual = Mesh::default();
+        tessellator(2.0).tessellate_border_rect(&shape, &mut actual);
+        let mut expected = Mesh::default();
+        tessellator(2.0).tessellate_rect(&RectShape::filled(rect, 8, fill), &mut expected);
+
+        let size = [160, 120];
+        let actual = rasterize(&actual, 2.0, size);
+        let expected = rasterize(&expected, 2.0, size);
+        // The rows of the bottom side, between the corners of the left and the right side.
+        let row = |y: usize| {
+            let start = y * size[0] + 2 * 30;
+            start..start + 2 * 20
+        };
+        for y in 2 * 46..2 * 50 {
+            let difference = largest_difference(&actual[row(y)], &expected[row(y)]);
+            assert!(
+                difference <= 0.1,
+                "row {y}: largest difference {difference}"
+            );
+        }
     }
 
     #[test]

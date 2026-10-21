@@ -4,6 +4,8 @@ use crate::*;
 ///
 /// The stroke is always on the inside of [`Self::rect`], as with [`StrokeKind::Inside`].
 /// The fill covers only the area inside the stroke.
+/// A side with a transparent color paints no stroke, and the fill covers its area, as in
+/// [`RectShape`].
 ///
 /// When all four sides have the same width and color, the tessellator paints a [`RectShape`],
 /// so the result is identical to [`RectShape`] with [`StrokeKind::Inside`].
