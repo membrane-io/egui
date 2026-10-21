@@ -1,5 +1,6 @@
 mod band_shape;
 mod bezier_shape;
+mod border_rect_shape;
 mod circle_shape;
 mod ellipse_shape;
 mod paint_callback;
@@ -11,6 +12,7 @@ mod text_shape;
 pub use self::{
     band_shape::{BandPoint, BandShape},
     bezier_shape::{CubicBezierShape, QuadraticBezierShape},
+    border_rect_shape::{BorderRectShape, SideColors},
     circle_shape::CircleShape,
     ellipse_shape::EllipseShape,
     paint_callback::{PaintCallback, PaintCallbackInfo},

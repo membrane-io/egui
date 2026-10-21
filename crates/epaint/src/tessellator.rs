@@ -17,6 +17,10 @@ use crate::{
     stroke::PathStroke, texture_atlas::PreparedDisc,
 };
 
+// MEMBRANE: the tessellation of `BorderRectShape`.
+#[path = "tessellator_border_rect.rs"]
+mod border_rect;
+
 // ----------------------------------------------------------------------------
 
 #[expect(clippy::approx_constant)]
@@ -1757,6 +1761,9 @@ impl Tessellator {
             Shape::Rect(rect_shape) => {
                 self.tessellate_rect(&rect_shape, out);
             }
+            Shape::BorderRect(border_rect_shape) => {
+                self.tessellate_border_rect(&border_rect_shape, out);
+            }
             Shape::Text(text_shape) => {
                 if self.options.debug_paint_text_rects {
                     let rect = text_shape.galley.rect.translate(text_shape.pos.to_vec2());
@@ -2722,6 +2729,7 @@ impl Tessellator {
                 | Shape::Mesh(_)
                 | Shape::LineSegment { .. }
                 | Shape::Rect(_)
+                | Shape::BorderRect(_)
                 | Shape::Callback(_) => false,
             }
         }

@@ -60,8 +60,9 @@ pub use self::{
     rounded_rect::RoundedRect,
     shadow::Shadow,
     shapes::{
-        BandPoint, BandShape, CircleShape, CubicBezierShape, EllipseShape, PaintCallback,
-        PaintCallbackInfo, PathShape, QuadraticBezierShape, RectShape, Shape, TextShape,
+        BandPoint, BandShape, BorderRectShape, CircleShape, CubicBezierShape, EllipseShape,
+        PaintCallback, PaintCallbackInfo, PathShape, QuadraticBezierShape, RectShape, Shape,
+        SideColors, TextShape,
     },
     stats::PaintStats,
     stroke::{PathStroke, Stroke, StrokeKind},

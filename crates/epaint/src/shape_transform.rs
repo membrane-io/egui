@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-    BandShape, CircleShape, Color32, ColorMode, CubicBezierShape, EllipseShape, Mesh, PathShape,
-    QuadraticBezierShape, RectShape, Shape, TextShape, color,
+    BandShape, BorderRectShape, CircleShape, Color32, ColorMode, CubicBezierShape, EllipseShape,
+    Mesh, PathShape, QuadraticBezierShape, RectShape, Shape, TextShape, color,
 };
 
 /// Remember to handle [`Color32::PLACEHOLDER`] specially!
@@ -84,6 +84,20 @@ pub fn adjust_colors(
         }) => {
             adjust_color(fill);
             adjust_color(&mut stroke.color);
+        }
+
+        Shape::BorderRect(BorderRectShape {
+            rect: _,
+            corner_radius: _,
+            fill,
+            stroke_width: _,
+            stroke_color,
+        }) => {
+            adjust_color(fill);
+            adjust_color(&mut stroke_color.left);
+            adjust_color(&mut stroke_color.right);
+            adjust_color(&mut stroke_color.top);
+            adjust_color(&mut stroke_color.bottom);
         }
 
         Shape::Text(TextShape {
