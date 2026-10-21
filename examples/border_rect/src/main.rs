@@ -35,7 +35,7 @@ fn main() -> eframe::Result {
 
 struct Demo {
     fill: bool,
-    translucent: bool,
+    stroke_opacity: f32,
     blink: bool,
     zoom: f32,
 }
@@ -44,7 +44,7 @@ impl Default for Demo {
     fn default() -> Self {
         Self {
             fill: true,
-            translucent: false,
+            stroke_opacity: 1.0,
             blink: false,
             zoom: 1.0,
         }
@@ -59,7 +59,7 @@ impl Demo {
     fn ui(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.fill, "Fill");
-            ui.checkbox(&mut self.translucent, "Translucent stroke");
+            ui.add(egui::Slider::new(&mut self.stroke_opacity, 0.0..=1.0).text("Stroke opacity"));
             ui.checkbox(&mut self.blink, "Blink")
                 .on_hover_text("Paint the two shapes in the same place, one after the other");
             ui.add(egui::Slider::new(&mut self.zoom, 0.5..=4.0).text("Zoom"));
@@ -110,6 +110,15 @@ impl Demo {
         ui.heading("Different sides");
         ui.label("Only BorderRectShape can paint these.");
         self.different_sides(ui);
+
+        ui.add_space(12.0);
+        ui.heading("Overlapping shapes");
+        ui.label(
+            "Each cell paints one shape over another. With a translucent stroke, the two strokes \
+             blend where they cross. Turn off the fill to see the stroke of the lower shape \
+             inside the upper shape.",
+        );
+        self.overlapping(ui);
     }
 
     fn fill(&self, ui: &Ui) -> Color32 {
@@ -125,10 +134,19 @@ impl Demo {
     }
 
     fn stroke_color(&self) -> Color32 {
-        if self.translucent {
-            Color32::from_white_alpha(70)
-        } else {
-            Color32::from_rgb(230, 120, 30)
+        self.with_opacity(Color32::from_rgb(230, 120, 30))
+    }
+
+    fn with_opacity(&self, color: Color32) -> Color32 {
+        color.gamma_multiply(self.stroke_opacity)
+    }
+
+    fn side_colors_with_opacity(&self, colors: SideColors) -> SideColors {
+        SideColors {
+            left: self.with_opacity(colors.left),
+            right: self.with_opacity(colors.right),
+            top: self.with_opacity(colors.top),
+            bottom: self.with_opacity(colors.bottom),
         }
     }
 
@@ -334,6 +352,7 @@ impl Demo {
                             vec2(150.0, 60.0)
                         };
                         let rect = allocate(ui, size);
+                        let colors = self.side_colors_with_opacity(colors);
                         ui.painter()
                             .add(BorderRectShape::new(rect, radius, fill, widths, colors));
                         ui.label(RichText::new(name).small());
@@ -343,6 +362,66 @@ impl Demo {
                     }
                 }
             });
+    }
+}
+
+impl Demo {
+    fn overlapping(&self, ui: &mut Ui) {
+        let fill = self.fill(ui);
+        let color = self.stroke_color();
+        let four_colors = self.side_colors_with_opacity(SideColors {
+            left: Color32::from_rgb(230, 70, 70),
+            right: Color32::from_rgb(80, 200, 100),
+            top: Color32::from_rgb(80, 140, 240),
+            bottom: Color32::from_rgb(240, 200, 60),
+        });
+        // Allocate a cell, and return the rects of the lower shape and of the upper shape.
+        let pair = |ui: &mut Ui| {
+            let cell = allocate(ui, vec2(230.0, 140.0));
+            let lower = Rect::from_min_size(cell.min + vec2(10.0, 10.0), vec2(140.0, 80.0));
+            [lower, lower.translate(vec2(70.0, 40.0))]
+        };
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 24.0;
+            ui.vertical(|ui| {
+                for rect in pair(ui) {
+                    ui.painter().add(RectShape::new(
+                        rect,
+                        12,
+                        fill,
+                        Stroke::new(6.0, color),
+                        StrokeKind::Inside,
+                    ));
+                }
+                ui.label(RichText::new("RectShape, width 6, radius 12").small());
+            });
+            ui.vertical(|ui| {
+                for rect in pair(ui) {
+                    ui.painter().add(BorderRectShape::new(
+                        rect,
+                        12,
+                        fill,
+                        MarginF32::same(6.0),
+                        four_colors,
+                    ));
+                }
+                ui.label(RichText::new("four colors, width 6, radius 12").small());
+            });
+            ui.vertical(|ui| {
+                let widths = MarginF32 {
+                    left: 8.0,
+                    right: 2.0,
+                    top: 2.0,
+                    bottom: 8.0,
+                };
+                for rect in pair(ui) {
+                    ui.painter()
+                        .add(BorderRectShape::new(rect, 16, fill, widths, color));
+                }
+                ui.label(RichText::new("8, 2, 2, 8, radius 16").small());
+            });
+        });
     }
 }
 
