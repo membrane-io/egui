@@ -8,9 +8,13 @@
 //! the mesh for different sides instead. The two columns must look identical.
 //!
 //! The second section paints sides that `RectShape` cannot paint.
+//!
+//! The zoom scales the two sections with a layer transform, as a zoomed canvas in an app does.
+//! The controls stay at their size.
 
 use eframe::egui::{
-    self, Color32, MarginF32, Rect, RichText, Sense, Shape, Ui, Vec2,
+    self, Color32, Id, LayerId, MarginF32, Rect, RichText, Sense, Shape, Ui, UiBuilder, Vec2,
+    emath::TSTransform,
     epaint::{BorderRectShape, Mesh, RectShape, SideColors, Stroke, StrokeKind, Tessellator},
     vec2,
 };
@@ -25,9 +29,7 @@ fn main() -> eframe::Result {
 
     let mut demo = Demo::default();
     eframe::run_ui_native("BorderRectShape", options, move |ui, _frame| {
-        egui::CentralPanel::default().show(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| demo.ui(ui));
-        });
+        egui::CentralPanel::default().show(ui, |ui| demo.ui(ui));
     })
 }
 
@@ -61,13 +63,41 @@ impl Demo {
             ui.checkbox(&mut self.blink, "Blink")
                 .on_hover_text("Paint the two shapes in the same place, one after the other");
             ui.add(egui::Slider::new(&mut self.zoom, 0.5..=4.0).text("Zoom"));
+            ui.label(format!(
+                "Pixels per point: {}",
+                ui.ctx().pixels_per_point() * self.zoom
+            ));
         });
-        if ui.ctx().zoom_factor() != self.zoom {
-            ui.ctx().set_zoom_factor(self.zoom);
-        }
-        ui.label(format!("Pixels per point: {}", ui.ctx().pixels_per_point()));
+        ui.separator();
 
-        ui.add_space(12.0);
+        egui::ScrollArea::both().show(ui, |ui| self.zoomed(ui, Self::sections));
+    }
+
+    /// Show `add_contents` in a layer that the zoom scales.
+    fn zoomed(&self, ui: &mut Ui, add_contents: impl FnOnce(&Self, &mut Ui)) {
+        let ctx = ui.ctx().clone();
+        let origin = ui.cursor().min;
+        // The transform keeps `origin` in place and scales the content around it.
+        let transform = TSTransform::new(origin.to_vec2() * (1.0 - self.zoom), self.zoom);
+        let layer_id = LayerId::new(ui.layer_id().order, Id::unique("zoomed"));
+        ctx.set_sublayer(ui.layer_id(), layer_id);
+        ctx.set_transform_layer(layer_id, transform);
+
+        let max_rect = Rect::from_min_size(
+            origin,
+            vec2(ui.available_width() / self.zoom, f32::INFINITY),
+        );
+        let mut child = ui.new_child(UiBuilder::new().layer_id(layer_id).max_rect(max_rect));
+        child.set_clip_rect(transform.inverse() * ui.clip_rect());
+        {
+            // The text rasterizes at the size that it gets on the screen.
+            let _ppp = ctx.scoped_pixels_per_point(ctx.pixels_per_point() * self.zoom);
+            add_contents(self, &mut child);
+        }
+        ui.allocate_exact_size(child.min_rect().size() * self.zoom, Sense::hover());
+    }
+
+    fn sections(&self, ui: &mut Ui) {
         ui.heading("Four equal sides");
         ui.label(
             "In each cell, the left rectangle is a RectShape with StrokeKind::Inside. The right \
@@ -322,13 +352,24 @@ fn allocate(ui: &mut Ui, size: Vec2) -> Rect {
 
 /// Paint the mesh of `BorderRectShape` for different sides, also when the sides are equal.
 ///
-/// The demo tessellates the shape at the pixels per point of the screen. The mesh is not correct
-/// in a layer with a scale, but this demo has no such layer.
+/// The function tessellates the shape in screen coordinates, as the tessellator does with a
+/// `Shape`. Then it moves the mesh back into the coordinates of the layer, and the layer transform
+/// moves it to the same screen position again.
 fn paint_sides_mesh(ui: &Ui, shape: &BorderRectShape) {
     let ctx = ui.ctx();
+    let transform = ctx
+        .layer_transform_to_global(ui.layer_id())
+        .unwrap_or_default();
+    let mut screen_shape = Shape::from(shape.clone());
+    screen_shape.transform(transform);
+    let Shape::BorderRect(screen_shape) = screen_shape else {
+        unreachable!("the transform keeps the variant");
+    };
+
     let options = ctx.tessellation_options(|options| *options);
     let mut tessellator = Tessellator::new(ctx.pixels_per_point(), options, [1, 1], vec![]);
     let mut mesh = Mesh::default();
-    tessellator.tessellate_border_rect_sides(shape, &mut mesh);
+    tessellator.tessellate_border_rect_sides(&screen_shape, &mut mesh);
+    mesh.transform(transform.inverse());
     ui.painter().add(Shape::mesh(mesh));
 }
