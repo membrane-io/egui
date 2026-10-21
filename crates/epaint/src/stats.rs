@@ -204,6 +204,7 @@ impl PaintStats {
             | Shape::Ellipse { .. }
             | Shape::LineSegment { .. }
             | Shape::Rect { .. }
+            | Shape::BorderRect(_)
             | Shape::CubicBezier(_)
             | Shape::QuadraticBezier(_) => {}
             Shape::Path(path_shape) => {

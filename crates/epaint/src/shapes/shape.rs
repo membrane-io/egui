@@ -11,8 +11,8 @@ use crate::{
 };
 
 use super::{
-    BandShape, CircleShape, CubicBezierShape, EllipseShape, PaintCallback, PathShape,
-    QuadraticBezierShape, RectShape, TextShape,
+    BandShape, BorderRectShape, CircleShape, CubicBezierShape, EllipseShape, PaintCallback,
+    PathShape, QuadraticBezierShape, RectShape, TextShape,
 };
 
 /// A paint primitive such as a circle or a piece of text.
@@ -54,6 +54,9 @@ pub enum Shape {
 
     /// Rectangle with optional outline and fill.
     Rect(RectShape),
+
+    /// MEMBRANE: rectangle with a different stroke on each side, and an optional fill.
+    BorderRect(BorderRectShape),
 
     /// Text.
     ///
@@ -421,6 +424,7 @@ impl Shape {
             Self::Path(path_shape) => path_shape.visual_bounding_rect(),
             Self::Band(band_shape) => band_shape.visual_bounding_rect(),
             Self::Rect(rect_shape) => rect_shape.visual_bounding_rect(),
+            Self::BorderRect(border_rect_shape) => border_rect_shape.visual_bounding_rect(),
             Self::Text(text_shape) => text_shape.visual_bounding_rect(),
             Self::Mesh(mesh) => mesh.calc_bounds(),
             Self::QuadraticBezier(bezier) => bezier.visual_bounding_rect(),
@@ -499,6 +503,11 @@ impl Shape {
                 rect_shape.corner_radius *= transform.scaling;
                 rect_shape.stroke.width *= transform.scaling;
                 rect_shape.blur_width *= transform.scaling;
+            }
+            Self::BorderRect(border_rect_shape) => {
+                border_rect_shape.rect = transform * border_rect_shape.rect;
+                border_rect_shape.corner_radius *= transform.scaling;
+                border_rect_shape.stroke_width *= transform.scaling;
             }
             Self::Text(text_shape) => {
                 text_shape.transform(transform);
