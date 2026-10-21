@@ -5,7 +5,8 @@
 //!
 //! The first section paints four equal sides with both shapes. `BorderRectShape` paints a
 //! `RectShape` for four equal sides, so this demo calls `tessellate_border_rect_sides` to paint
-//! the mesh for different sides instead. The two columns must look identical.
+//! the mesh for different sides instead. With an opaque stroke, the two columns must look
+//! identical. With a translucent stroke, only `BorderRectShape` shows the fill under the stroke.
 //!
 //! The second section paints sides that `RectShape` cannot paint.
 //!
@@ -101,8 +102,9 @@ impl Demo {
         ui.heading("Four equal sides");
         ui.label(
             "In each cell, the left rectangle is a RectShape with StrokeKind::Inside. The right \
-             rectangle is the mesh of BorderRectShape for different sides. The two must look \
-             identical.",
+             rectangle is the mesh of BorderRectShape for different sides. With an opaque stroke \
+             or with no fill, the two must look identical. With a translucent stroke, \
+             BorderRectShape shows the fill under the stroke, as CSS does, and RectShape does not.",
         );
         self.equal_sides(ui);
 

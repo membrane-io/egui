@@ -3,12 +3,12 @@ use crate::*;
 /// MEMBRANE: a rectangle with a different stroke width and color on each side, like a CSS border.
 ///
 /// The stroke is always on the inside of [`Self::rect`], as with [`StrokeKind::Inside`].
-/// The fill covers only the area inside the stroke.
-/// A side with a transparent color paints no stroke, and the fill covers its area, as in
-/// [`RectShape`].
+/// The fill covers the whole rectangle, and the stroke paints over it, as CSS paints the
+/// background under the border. A translucent stroke shows the fill under it.
+/// [`RectShape`] is different: its fill covers only the area inside a visible stroke.
 ///
-/// When all four sides have the same width and color, the tessellator paints a [`RectShape`],
-/// so the result is identical to [`RectShape`] with [`StrokeKind::Inside`].
+/// When all four sides have the same width and color, the tessellator paints a [`RectShape`]
+/// with [`StrokeKind::Inside`] and the stroke color blended over the fill.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct BorderRectShape {
@@ -48,6 +48,17 @@ impl SideColors {
             right: color,
             top: color,
             bottom: color,
+        }
+    }
+
+    /// Each color, blended over `background`.
+    #[inline]
+    pub fn over(self, background: Color32) -> Self {
+        Self {
+            left: background.blend(self.left),
+            right: background.blend(self.right),
+            top: background.blend(self.top),
+            bottom: background.blend(self.bottom),
         }
     }
 }
@@ -103,8 +114,9 @@ impl BorderRectShape {
         if w.left > 0.0 && !same_color {
             return None;
         }
+        // The fill covers the whole rectangle, so the stroke paints over it.
         let stroke = if w.left > 0.0 {
-            Stroke::new(w.left, c.left)
+            Stroke::new(w.left, fill.blend(c.left))
         } else {
             Stroke::NONE
         };
