@@ -4236,73 +4236,109 @@ impl Context {
             // - show whether interactable
             let mut prev_order: Option<Order> = None;
             for layer_id in layers_ids {
-                if let Some(area) = AreaState::load(self, layer_id.id) {
-                    let (is_visible, parent, wants_to_be_on_top) = self.memory(|mem| {
-                        let areas = mem.areas();
-                        (
-                            areas.is_visible(&layer_id),
-                            areas.parent_layer(layer_id),
-                            areas.wants_to_be_on_top(&layer_id),
-                        )
-                    });
-                    if !is_visible {
-                        continue;
-                    }
-                    if prev_order.is_some_and(|prev| prev != layer_id.order) {
-                        ui.add(Separator::default().horizontal().spacing(3.0));
-                    }
+                if prev_order.is_some_and(|prev| prev != layer_id.order) {
+                    ui.add(Separator::default().horizontal().spacing(3.0));
                     prev_order = Some(layer_id.order);
-                    let mut text = format!("{} - {:?}", layer_id.short_debug_format(), area.rect());
-                    if let Some(parent) = parent {
-                        text += &format!(" parent: {}", parent.id.short_debug_format());
-                    }
-                    if !area.interactable {
-                        text += &format!(" non-interactable");
-                    }
-                    // TODO(emilk): `Sense::hover_highlight()`
-                    let response =
-                        ui.add(Label::new(RichText::new(text).monospace()).sense(Sense::click()));
-                    let row = response.rect;
-                    let size = row.height() * 0.4;
-                    if wants_to_be_on_top {
-                        let center = Pos2::new(row.left() - size, row.center().y);
-                        let color = ui.visuals().warn_fg_color;
-                        ui.painter().add(epaint::Shape::convex_polygon(
-                            vec![
-                                center + vec2(-size * 0.5, -size * 0.5),
-                                center + vec2(size * 0.5, -size * 0.5),
-                                center + vec2(0.0, size * 0.5),
-                            ],
-                            color,
-                            epaint::Stroke::NONE,
-                        ));
-                    }
-                    // MEMBRANE: mark layers whose rect is under the pointer with a white dot.
-                    let transform = self.layer_transform_to_global(layer_id).unwrap_or_default();
-                    let global_rect = transform * area.rect();
-                    let pointer_inside = self
-                        .input(|i| i.pointer.hover_pos())
-                        .is_some_and(|pos| global_rect.contains(pos));
-                    if pointer_inside {
-                        ui.painter().circle_filled(
-                            Pos2::new(row.left() - size * 2.0, row.center().y),
-                            size * 0.5,
-                            Color32::WHITE,
-                        );
-                    }
-                    if response.hovered() && is_visible {
-                        // MEMBRANE: consider transform when showing layer rects.
-                        let transform =
-                            self.layer_transform_to_global(layer_id).unwrap_or_default();
-                        let rect = transform * area.rect();
-                        ui.debug_painter().debug_rect(
-                            rect,
-                            Color32::RED,
-                            layer_id.short_debug_format(),
-                        );
-                    }
+                }
+                let area = AreaState::load(self, layer_id.id);
+                let (is_visible, parent, wants_to_be_on_top) = self.memory(|mem| {
+                    let areas = mem.areas();
+                    (
+                        areas.is_visible(&layer_id),
+                        areas.parent_layer(layer_id),
+                        areas.wants_to_be_on_top(&layer_id),
+                    )
+                });
+                if area.is_some() && !is_visible {
+                    continue;
+                }
+                // MEMBRANE: a layer without an area state gets the bounds of the shapes that this
+                // pass painted into it before this point.
+                let local_rect = match &area {
+                    Some(area) => area.rect(),
+                    None => self.graphics(|graphics| {
+                        graphics.get(layer_id).map_or(Rect::NOTHING, |list| {
+                            list.all_entries()
+                                .map(|clipped| {
+                                    clipped
+                                        .shape
+                                        .visual_bounding_rect()
+                                        .intersect(clipped.clip_rect)
+                                })
+                                .filter(|rect| !rect.is_negative())
+                                .fold(Rect::NOTHING, Rect::union)
+                        })
+                    }),
+                };
+                let has_rect = !local_rect.is_negative();
+                let mut text = layer_id.short_debug_format();
+                if let Some(parent) = parent {
+                    text += &format!(" parent: {}", parent.id.short_debug_format());
+                }
+                if area.as_ref().is_some_and(|area| !area.interactable) {
+                    text += " non-interactable";
+                }
+                let rect_text = if has_rect {
+                    format!("{local_rect:?}")
                 } else {
-                    ui.monospace(layer_id.short_debug_format());
+                    "no shapes".to_owned()
+                };
+                let rect_font_size = TextStyle::Small.resolve(ui.style()).size;
+                // TODO(emilk): `Sense::hover_highlight()`
+                let response = ui
+                    .horizontal(|ui| {
+                        let label = ui.add(
+                            Label::new(RichText::new(text).monospace()).sense(Sense::click()),
+                        );
+                        let rect_label = ui.add(
+                            Label::new(
+                                RichText::new(rect_text)
+                                    .family(epaint::FontFamily::Monospace)
+                                    .size(rect_font_size),
+                            )
+                            .sense(Sense::click()),
+                        );
+                        label | rect_label
+                    })
+                    .inner;
+                let row = response.rect;
+                let size = row.height() * 0.4;
+                if wants_to_be_on_top {
+                    let center = Pos2::new(row.left() - size, row.center().y);
+                    let color = ui.visuals().warn_fg_color;
+                    ui.painter().add(epaint::Shape::convex_polygon(
+                        vec![
+                            center + vec2(-size * 0.5, -size * 0.5),
+                            center + vec2(size * 0.5, -size * 0.5),
+                            center + vec2(0.0, size * 0.5),
+                        ],
+                        color,
+                        epaint::Stroke::NONE,
+                    ));
+                }
+                if !has_rect {
+                    continue;
+                }
+                // MEMBRANE: consider transform when showing layer rects.
+                let transform = self.layer_transform_to_global(layer_id).unwrap_or_default();
+                let global_rect = transform * local_rect;
+                // MEMBRANE: mark layers whose rect is under the pointer with a white dot.
+                let pointer_inside = self
+                    .input(|i| i.pointer.hover_pos())
+                    .is_some_and(|pos| global_rect.contains(pos));
+                if pointer_inside {
+                    ui.painter().circle_filled(
+                        Pos2::new(row.left() - size * 2.0, row.center().y),
+                        size * 0.5,
+                        Color32::WHITE,
+                    );
+                }
+                if response.hovered() {
+                    ui.debug_painter().debug_rect(
+                        global_rect,
+                        Color32::RED,
+                        layer_id.short_debug_format(),
+                    );
                 }
             }
         });
