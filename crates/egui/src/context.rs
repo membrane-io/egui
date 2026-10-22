@@ -5548,7 +5548,8 @@ mod test {
     fn a_child_on_another_layer_snaps_with_the_scale_of_its_own_layer() {
         let ctx = Context::default();
         ctx.set_pixels_per_point(2.0);
-        ctx.run_ui(Default::default(), |_| {}).drop_without_applying_deltas();
+        ctx.run_ui(Default::default(), |_| {})
+            .drop_without_applying_deltas();
 
         let mut child_pixels_per_point = None;
         ctx.run_ui(Default::default(), |ui| {
@@ -5577,7 +5578,8 @@ mod test {
     fn a_ui_snaps_with_a_layer_transform_set_after_it() {
         let ctx = Context::default();
         ctx.set_pixels_per_point(2.0);
-        ctx.run_ui(Default::default(), |_| {}).drop_without_applying_deltas();
+        ctx.run_ui(Default::default(), |_| {})
+            .drop_without_applying_deltas();
 
         let mut pixels_per_point = None;
         ctx.run_ui(Default::default(), |ui| {
