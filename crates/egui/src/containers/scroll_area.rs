@@ -141,6 +141,15 @@ impl ScrollBarVisibility {
         Self::VisibleWhenNeeded,
         Self::AlwaysVisible,
     ];
+
+    /// Should the bar show, given whether it is `needed` and whether its direction is `enabled`?
+    fn shows(self, needed: bool, enabled: bool) -> bool {
+        match self {
+            Self::AlwaysHidden => false,
+            Self::VisibleWhenNeeded => needed,
+            Self::AlwaysVisible => enabled,
+        }
+    }
 }
 
 /// When [`ScrollArea`] should let the user scroll by dragging the content.
@@ -344,11 +353,14 @@ pub struct ScrollArea {
     auto_shrink: Vec2b,
     max_size: Vec2,
     min_scrolled_size: Vec2,
-    scroll_bar_visibility: ScrollBarVisibility,
+
+    /// The visibility of the horizontal bar (`[0]`) and of the vertical bar (`[1]`).
+    scroll_bar_visibility: [ScrollBarVisibility; 2],
     scroll_bar_rect: Option<Rect>,
     id_salt: Option<IdSalt>,
     offset_x: Option<f32>,
     offset_y: Option<f32>,
+    offset_shift: Vec2,
     on_hover_cursor: Option<CursorIcon>,
     on_drag_cursor: Option<CursorIcon>,
     scroll_source: ScrollSource,
@@ -404,6 +416,7 @@ impl ScrollArea {
             id_salt: None,
             offset_x: None,
             offset_y: None,
+            offset_shift: Vec2::ZERO,
             on_hover_cursor: None,
             on_drag_cursor: None,
             scroll_source: ScrollSource::default(),
@@ -465,7 +478,28 @@ impl ScrollArea {
     /// With `ScrollBarVisibility::VisibleWhenNeeded` (default), the scroll bar will be visible only when needed.
     #[inline]
     pub fn scroll_bar_visibility(mut self, scroll_bar_visibility: ScrollBarVisibility) -> Self {
-        self.scroll_bar_visibility = scroll_bar_visibility;
+        self.scroll_bar_visibility = [scroll_bar_visibility; 2];
+        self
+    }
+
+    /// Set the visibility of the horizontal scroll bar only.
+    ///
+    /// See also: [`Self::scroll_bar_visibility`].
+    #[inline]
+    pub fn horizontal_scroll_bar_visibility(mut self, visibility: ScrollBarVisibility) -> Self {
+        self.scroll_bar_visibility[0] = visibility;
+        self
+    }
+
+    /// Set the visibility of the vertical scroll bar only.
+    ///
+    /// For example, a list that loads more rows at each end has no fixed length, so a vertical bar
+    /// cannot show its position. Hide that bar and keep the horizontal one.
+    ///
+    /// See also: [`Self::scroll_bar_visibility`].
+    #[inline]
+    pub fn vertical_scroll_bar_visibility(mut self, visibility: ScrollBarVisibility) -> Self {
+        self.scroll_bar_visibility[1] = visibility;
         self
     }
 
@@ -509,6 +543,21 @@ impl ScrollArea {
     #[inline]
     pub fn vertical_scroll_offset(mut self, offset: f32) -> Self {
         self.offset_y = Some(offset);
+        self
+    }
+
+    /// Move the scroll offset by `delta` in this frame, and keep the motion that is in progress.
+    ///
+    /// Use it when content was added or removed before the visible part, for instance rows that a
+    /// list loaded above the viewport. With the same `delta` as the height of those rows, the visible
+    /// content stays at the same place on the screen.
+    ///
+    /// Unlike [`Self::scroll_offset`], this moves the target of an animated scroll (for instance from
+    /// [`Ui::scroll_to_cursor`](crate::ui::Ui::scroll_to_cursor)) by the same `delta`, and it keeps the
+    /// kinetic velocity after a drag and the stick-to-end state.
+    #[inline]
+    pub fn shift_offset(mut self, delta: Vec2) -> Self {
+        self.offset_shift += delta;
         self
     }
 
@@ -683,7 +732,7 @@ struct Prepared {
     /// and vice versa.
     current_bar_use: Vec2,
 
-    scroll_bar_visibility: ScrollBarVisibility,
+    scroll_bar_visibility: [ScrollBarVisibility; 2],
     scroll_bar_rect: Option<Rect>,
 
     /// Where on the screen the content is (excludes scroll bars; includes `content_margin`).
@@ -721,6 +770,7 @@ impl ScrollArea {
             id_salt,
             offset_x,
             offset_y,
+            offset_shift,
             on_hover_cursor,
             on_drag_cursor,
             scroll_source,
@@ -743,12 +793,19 @@ impl ScrollArea {
 
         state.offset.x = offset_x.unwrap_or(state.offset.x);
         state.offset.y = offset_y.unwrap_or(state.offset.y);
+        if offset_shift != Vec2::ZERO {
+            state.offset += offset_shift;
+            for d in 0..2 {
+                if let Some(target) = &mut state.offset_target[d] {
+                    target.target_offset += offset_shift[d];
+                }
+            }
+        }
 
-        let show_bars: Vec2b = match scroll_bar_visibility {
-            ScrollBarVisibility::AlwaysHidden => Vec2b::FALSE,
-            ScrollBarVisibility::VisibleWhenNeeded => state.show_scroll,
-            ScrollBarVisibility::AlwaysVisible => direction_enabled,
-        };
+        let show_bars = Vec2b::new(
+            scroll_bar_visibility[0].shows(state.show_scroll[0], direction_enabled[0]),
+            scroll_bar_visibility[1].shows(state.show_scroll[1], direction_enabled[1]),
+        );
 
         let show_bars_factor = Vec2::new(
             ctx.animate_bool_responsive(id.with("h"), show_bars[0]),
@@ -1264,11 +1321,10 @@ impl Prepared {
             }
         }
 
-        let show_scroll_this_frame = match scroll_bar_visibility {
-            ScrollBarVisibility::AlwaysHidden => Vec2b::FALSE,
-            ScrollBarVisibility::VisibleWhenNeeded => content_is_too_large,
-            ScrollBarVisibility::AlwaysVisible => direction_enabled,
-        };
+        let show_scroll_this_frame = Vec2b::new(
+            scroll_bar_visibility[0].shows(content_is_too_large[0], direction_enabled[0]),
+            scroll_bar_visibility[1].shows(content_is_too_large[1], direction_enabled[1]),
+        );
 
         // Avoid frame delay; start showing scroll bar right away:
         if show_scroll_this_frame[0] && show_bars_factor.x <= 0.0 {
