@@ -747,6 +747,7 @@ impl Prepared {
             anchor,
             constrain,
             constrain_rect,
+            clip_rect,
             ..
         } = self;
 
@@ -754,12 +755,6 @@ impl Prepared {
         let prev_size = state.size;
         let actual_size = content_ui.min_size();
         state.size = Some(actual_size);
-
-        // Make sure we report back the correct size.
-        // Very important after the initial sizing pass, when the initial estimate of the size is way off.
-        let final_rect = state.rect();
-        response.rect = final_rect;
-        response.interact_rect = final_rect;
 
         // TODO(lucasmerlin): Can the area response be based on Ui::response? Then this won't be needed
         // Bubble up the close event
@@ -769,7 +764,8 @@ impl Prepared {
 
         // MEMBRANE: If the actual size is different from the size that `begin` used to place the area,
         // move the shapes of this frame so that the anchor or the pivot stays in place. This makes
-        // animations that change the size look correct.
+        // animations that change the size look correct. The state gets the same position, so that
+        // `state.rect()` is the rect of the shapes.
         if !sizing_pass && prev_size != Some(actual_size) {
             let mut left_top = if let Some((anchor, offset)) = anchor {
                 anchor
@@ -786,9 +782,42 @@ impl Prepared {
                 )
                 .min;
             }
-            let adjustment = round_area_position(ctx, left_top) - drawn_left_top;
-            ctx.transform_layer_shapes(layer_id, emath::TSTransform::from_translation(adjustment));
+            let left_top = round_area_position(ctx, left_top);
+            ctx.transform_layer_shapes(
+                layer_id,
+                emath::TSTransform::from_translation(left_top - drawn_left_top),
+            );
+            state.set_left_top_pos(left_top);
         }
+
+        // Make sure we report back the correct size.
+        // Very important after the initial sizing pass, when the initial estimate of the size is way off.
+        let final_rect = state.rect();
+        response.rect = final_rect;
+        response.interact_rect = final_rect;
+
+        // MEMBRANE: `begin` registers the move widget before it constrains the area and before the
+        // content sets the size. Register it again with the rect of the shapes, so that
+        // `Context::read_response` and the hit test of the next pass use the painted rect. The same
+        // id updates the existing widget rect, as in `Ui::remember_min_rect`.
+        ctx.pass_state_mut(|fs| {
+            fs.used_ids.remove(&response.id);
+        });
+        ctx.create_widget(
+            WidgetRect {
+                id: response.id,
+                parent_id: layer_id.id,
+                layer_id,
+                rect: final_rect,
+                interact_rect: final_rect.intersect(clip_rect),
+                sense: response.sense,
+                enabled: response.enabled(),
+                visible: !sizing_pass,
+            },
+            true,
+            Default::default(),
+            None,
+        );
 
         ctx.memory_mut(|m| m.areas_mut().set_state(layer_id, state));
 
@@ -879,4 +908,66 @@ fn automatic_area_position(ctx: &Context, constrain_rect: Rect, layer_id: LayerI
         }
     }
     best_pos
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Area, Color32, Context, Id, RawInput, Rect, Sense, pos2, vec2};
+
+    /// The move widget of an area must have the rect of the shapes, also when `constrain_to` moves
+    /// the area and when the content changes the size.
+    #[test]
+    fn move_widget_rect_is_painted_rect() {
+        let ctx = Context::default();
+        let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0));
+        let id = Id::unique("constrained_area");
+
+        // The area starts at x = 350, so each width moves it to the left. The width grows at pass
+        // 3, so `end` moves the shapes of that pass.
+        for (pass, width) in [150.0, 150.0, 150.0, 200.0, 200.0].into_iter().enumerate() {
+            let input = RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            };
+            // Gaze reads the widget in the same pass, after the area shows. After `run_ui`, the
+            // context holds the widgets of an older pass.
+            let mut widget = None;
+            let mut output = ctx.run_ui(input, |ui| {
+                Area::new(id)
+                    .fixed_pos(pos2(350.0, 50.0))
+                    .constrain_to(screen)
+                    .show(ui.ctx(), |ui| {
+                        let (rect, _) = ui.allocate_exact_size(vec2(width, 40.0), Sense::hover());
+                        ui.painter().rect_filled(rect, 0.0, Color32::WHITE);
+                    });
+                widget = ui.ctx().read_response(id.with("move"));
+            });
+            output.textures_delta.clear();
+
+            // The first pass is a sizing pass and paints nothing.
+            if pass == 0 {
+                continue;
+            }
+
+            let painted = output
+                .shapes
+                .iter()
+                .map(|clipped| clipped.shape.visual_bounding_rect())
+                .reduce(|a, b| a.union(b))
+                .expect("the area paints a rect");
+            let area_rect = ctx
+                .memory(|mem| mem.area_rect(id))
+                .expect("the area has a state");
+            let widget = widget.expect("the area registers a move widget");
+
+            assert_eq!(
+                painted,
+                Rect::from_min_size(pos2(400.0 - width, 50.0), vec2(width, 40.0)),
+                "pass {pass}"
+            );
+            assert_eq!(area_rect, painted, "pass {pass}");
+            assert_eq!(widget.rect, painted, "pass {pass}");
+            assert_eq!(widget.interact_rect, painted, "pass {pass}");
+        }
+    }
 }
