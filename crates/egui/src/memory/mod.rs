@@ -923,9 +923,12 @@ impl Memory {
     /// when the user presses tab, arrow keys, or escape.
     ///
     /// You must first give focus to the widget before calling this.
+    ///
+    /// The filter applies in the same frame that the widget gains focus. If it waited for the next
+    /// frame, an arrow key in that first frame would move the focus to another widget (for example
+    /// a button inside a `keyboard` element).
     pub fn set_focus_lock_filter(&mut self, id: Id, event_filter: EventFilter) {
-        if self.had_focus_last_frame(id)
-            && self.has_focus(id)
+        if self.has_focus(id)
             && let Some(focused) = &mut self.focus_mut().focused_widget
             && focused.id == id
         {
@@ -937,9 +940,18 @@ impl Memory {
     /// See also [`crate::Response::request_focus`].
     ///
     /// Calling this will interrupt IME composition.
+    ///
+    /// When `id` already has the focus, this keeps its event filter. A new [`FocusWidget`] would
+    /// reset the filter to the default, and an arrow key in the next frame would move the focus.
     #[inline(always)]
     pub fn request_focus(&mut self, id: Id) {
-        self.focus_mut().focused_widget = Some(FocusWidget::new(id));
+        let filter = self
+            .focus()
+            .and_then(|focus| focus.focused_widget)
+            .filter(|widget| widget.id == id)
+            .map(|widget| widget.filter)
+            .unwrap_or_default();
+        self.focus_mut().focused_widget = Some(FocusWidget { id, filter });
         self.interrupt_ime();
     }
 
