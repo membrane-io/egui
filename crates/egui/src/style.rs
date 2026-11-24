@@ -1413,12 +1413,15 @@ pub struct Selection {
 /// How code-styled monospaced labels look, e.g. [`crate::RichText::code`].
 ///
 /// Also known as `pre` or `code` blocks, after the HTML tags.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 pub struct CodeVisuals {
     /// Background color behind the code.
     pub bg_color: Color32,
+
+    /// Outline of the background, painted inside its edge.
+    pub stroke: Stroke,
 
     /// Text color of the code.
     ///
@@ -1895,6 +1898,7 @@ impl CodeVisuals {
     pub fn dark() -> Self {
         Self {
             bg_color: Color32::from_gray(48),
+            stroke: Stroke::NONE,
             text_color: None,
             corner_radius: CornerRadius::same(1),
             margin: Margin {
@@ -2481,6 +2485,7 @@ impl CodeVisuals {
     pub fn ui(&mut self, ui: &mut crate::Ui) {
         let Self {
             bg_color,
+            stroke,
             text_color,
             corner_radius,
             margin,
@@ -2496,6 +2501,10 @@ impl CodeVisuals {
         Grid::new("code_visuals").num_columns(2).show(ui, |ui| {
             ui.label("Background color");
             ui.color_edit_button_srgba(bg_color);
+            ui.end_row();
+
+            ui.label("Stroke");
+            ui.add(stroke);
             ui.end_row();
 
             ui.label("Text color");

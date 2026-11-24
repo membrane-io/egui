@@ -458,21 +458,24 @@ impl RichText {
             font_id
         };
 
-        let (background, expand_bg, background_margin, background_corner_radius) = if code {
-            (
-                style.visuals.code.bg_color,
-                Vec2::ZERO,
-                style.visuals.code.margin,
-                style.visuals.code.corner_radius,
-            )
-        } else {
-            (
-                background_color,
-                expand_bg,
-                epaint::Margin::ZERO,
-                epaint::CornerRadius::ZERO,
-            )
-        };
+        let (background, expand_bg, background_margin, background_corner_radius, background_stroke) =
+            if code {
+                (
+                    style.visuals.code.bg_color,
+                    Vec2::ZERO,
+                    style.visuals.code.margin,
+                    style.visuals.code.corner_radius,
+                    style.visuals.code.stroke,
+                )
+            } else {
+                (
+                    background_color,
+                    expand_bg,
+                    epaint::Margin::ZERO,
+                    epaint::CornerRadius::ZERO,
+                    crate::Stroke::NONE,
+                )
+            };
 
         let underline = if underline {
             crate::Stroke::new(1.0, line_color)
@@ -502,6 +505,7 @@ impl RichText {
                 expand_bg,
                 background_margin,
                 background_corner_radius,
+                background_stroke,
                 coords,
                 bg_corner_radius: 0,
                 bg_stroke: crate::Stroke::NONE,

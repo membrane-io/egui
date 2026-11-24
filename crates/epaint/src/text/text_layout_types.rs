@@ -614,6 +614,14 @@ pub struct TextFormat {
     /// Default: [`CornerRadius::ZERO`]
     pub background_corner_radius: CornerRadius,
 
+    /// Outline of the [`Self::background`], painted inside its edge.
+    ///
+    /// MEMBRANE: this paints with or without a fill. If [`Self::bg_stroke`] is also set, both
+    /// paint, and this outline is on top.
+    ///
+    /// Default: [`Stroke::NONE`]
+    pub background_stroke: Stroke,
+
     pub coords: VariationCoords,
 
     /// Corner radius for background rectangles.
@@ -628,6 +636,9 @@ pub struct TextFormat {
     ///
     /// The background rectangle takes the stroke colour, and the fill sits inside it, so the
     /// border follows `bg_corner_radius`. A fill that is not opaque lets the stroke colour through.
+    ///
+    /// MEMBRANE: this paints only when [`Self::background`] is not transparent. For an outline
+    /// without a fill, use [`Self::background_stroke`].
     ///
     /// Default: [`Stroke::NONE`] (no border)
     pub bg_stroke: Stroke,
@@ -669,6 +680,7 @@ impl Default for TextFormat {
             expand_bg: Vec2::new(1.0, 1.0),
             background_margin: Margin::ZERO,
             background_corner_radius: CornerRadius::ZERO,
+            background_stroke: Stroke::NONE,
             coords: VariationCoords::default(),
             bg_corner_radius: 0,
             bg_stroke: Stroke::NONE,
@@ -692,6 +704,7 @@ impl core::hash::Hash for TextFormat {
             expand_bg,
             background_margin,
             background_corner_radius,
+            background_stroke,
             coords,
             bg_corner_radius,
             bg_stroke,
@@ -711,6 +724,7 @@ impl core::hash::Hash for TextFormat {
         emath::OrderedFloat(expand_bg.y).hash(state);
         background_margin.hash(state);
         background_corner_radius.hash(state);
+        background_stroke.hash(state);
         coords.hash(state);
         bg_corner_radius.hash(state);
         bg_stroke.hash(state);
