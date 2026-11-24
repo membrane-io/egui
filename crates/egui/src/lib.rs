@@ -387,6 +387,9 @@
 
 #![expect(clippy::float_cmp)]
 #![expect(clippy::manual_range_contains)]
+#![warn(clippy::std_instead_of_alloc)]
+
+extern crate alloc;
 
 pub mod accessibility;
 mod animation_manager;
@@ -397,8 +400,10 @@ mod context;
 mod data;
 pub mod debug_text;
 mod drag_and_drop;
+mod embedded_view;
 pub(crate) mod grid;
 pub mod gui_zoom;
+mod highlight_state;
 mod hit_test;
 mod id;
 mod id_salt;
@@ -411,7 +416,7 @@ pub mod load;
 mod memory;
 pub mod os;
 mod painter;
-mod pass_state;
+pub mod pass_state;
 pub(crate) mod placer;
 pub mod plugin;
 pub mod response;
@@ -457,10 +462,10 @@ pub use epaint::{
     ClippedPrimitive, ColorImage, CornerRadius, Direction, ImageData, Margin, Mesh, PaintCallback,
     PaintCallbackInfo, Shadow, Shape, Stroke, StrokeKind, TextureHandle, TextureId, mutex,
     text::{
-        FallbackRequest, FontData, FontDefinitions, FontFamily, FontId, FontInsert, FontPriority,
-        FontHinting, FontProvider, FontTweak, GlyphBitmap, GlyphRasterizer, GlyphRasterizerRequest,
-        InsertFontFamily, MAX_GLYPH_SIZE, MissingGlyphPolicy, RasterizedGlyph,
-        has_emoji_presentation,
+        FallbackRequest, FontData, FontDefinitions, FontFamily, FontHinting, FontId, FontInsert,
+        FontPriority, FontProvider, FontTweak, GlyphBitmap, GlyphRasterizer,
+        GlyphRasterizerRequest, InsertFontFamily, MAX_GLYPH_SIZE, MissingGlyphPolicy,
+        RasterizedGlyph, has_emoji_presentation,
     },
     textures::{TextureFilter, TextureOptions, TextureWrapMode, TexturesDelta},
 };
@@ -490,15 +495,16 @@ pub use self::{
         modal, panel, scroll_area,
     },
     context::{
-        Context, PixelsPerPointGuard, RepaintCause, RequestRepaintInfo, quantize_display_scale,
+        Context, PixelsPerPointGuard, RepaintCause, RequestRepaintInfo, ViewportState,
+        quantize_display_scale,
     },
     data::{
         Key, ScreenshotCallback,
         input::{
             DroppedFile, DroppedFileHandle, DroppedString, Event, EventFilter, HoveredFile,
-            HoveredString, ImeEvent, KeyboardShortcut, ModifierNames, Modifiers, MouseWheelUnit,
-            NUM_POINTER_BUTTONS, PointerButton, RawInput, SafeAreaInsets, TouchDeviceId, TouchId,
-            TouchPhase, ViewportEvent, ViewportInfo,
+            HoveredString, ImeEvent, KeyboardShortcut, ModifierNames, Modifiers, MouseWheelSource,
+            MouseWheelUnit, NUM_POINTER_BUTTONS, PointerButton, RawInput, SafeAreaInsets,
+            TouchDeviceId, TouchId, TouchPhase, ViewportEvent, ViewportInfo,
         },
         output::{
             self, CursorIcon, CustomCursorImage, FullOutput, LogicOutput, OpenUrl, OutputCommand,
@@ -506,20 +512,26 @@ pub use self::{
         },
     },
     drag_and_drop::DragAndDrop,
+    embedded_view::{EmbeddedView, EmbeddedViewOutput, EmbeddedViewPlacement},
     epaint::text::TextWrapMode,
     grid::Grid,
+    highlight_state::HighlightState,
+    hit_test::WidgetHits,
     id::{Id, IdMap, IdSet},
     id_salt::{AsIdSalt, IdSalt, IdSaltMap, IdSaltSet},
     input_state::{InputOptions, InputState, MultiTouchInfo, PointerState, SurrenderFocusOn},
+    interaction::InteractionSnapshot,
     layers::{LayerId, Order},
     layout::Layout,
     load::SizeHint,
-    memory::{FocusDirection, Memory, Options, Theme, ThemePreference},
+    memory::{Areas, Focus, FocusDirection, Memory, Options, Theme, ThemePreference},
     painter::Painter,
     plugin::Plugin,
     response::{InnerResponse, Response},
     sense::Sense,
-    style::{FontSelection, Spacing, Style, TextStyle, Visuals},
+    style::{
+        CodeVisuals, DelayedHighlight, FadeOut, FontSelection, Spacing, Style, TextStyle, Visuals,
+    },
     text::{Galley, TextFormat},
     ui::Ui,
     ui_builder::{IdSource, UiBuilder},

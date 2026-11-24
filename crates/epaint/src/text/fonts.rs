@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use alloc::{collections::BTreeMap, sync::Arc};
 
 use crate::{
     Color32, ColorImage, TextureAtlas,
@@ -235,8 +235,8 @@ impl Fonts {
 
     /// Current size of the font image.
     /// Pass this to [`crate::Tessellator`].
-    pub fn font_image_size(&self) -> [usize; 2] {
-        self.fonts.glyphs.atlas().size()
+    pub fn font_image_resolution(&self) -> [usize; 2] {
+        self.fonts.glyphs.atlas().resolution()
     }
 
     /// Do the installed fonts have this glyph?
@@ -351,8 +351,8 @@ impl FontsView<'_> {
 
     /// Current size of the font image.
     /// Pass this to [`crate::Tessellator`].
-    pub fn font_image_size(&self) -> [usize; 2] {
-        self.fonts.glyphs.atlas().size()
+    pub fn font_image_resolution(&self) -> [usize; 2] {
+        self.fonts.glyphs.atlas().resolution()
     }
 
     /// Width of this character in points.
@@ -497,7 +497,7 @@ pub(crate) struct FontsImpl {
     family_keys: ahash::HashMap<FontFamily, FamilyKey>,
 
     /// Recycled `harfrust` shaping buffer to avoid per-layout allocations.
-    shape_buffer: Option<harfrust::UnicodeBuffer>,
+    shape_buffer: Option<harfrust::Buffer>,
 
     /// In the order they were added. See [`GlyphRasterizer`].
     glyph_rasterizers: Vec<GlyphRasterizer>,
@@ -521,7 +521,7 @@ impl FontsImpl {
             faces: FaceStore::new(options),
             families: Default::default(),
             family_keys: Default::default(),
-            shape_buffer: Some(harfrust::UnicodeBuffer::new()),
+            shape_buffer: Some(harfrust::Buffer::new()),
             glyph_rasterizers: Vec::new(),
             font_providers: Default::default(),
             missing_glyph_policy: Default::default(),
@@ -598,12 +598,12 @@ impl FontsImpl {
     }
 
     /// Take the recycled shaping buffer (or create a new one if already taken).
-    pub fn take_shape_buffer(&mut self) -> harfrust::UnicodeBuffer {
+    pub fn take_shape_buffer(&mut self) -> harfrust::Buffer {
         self.shape_buffer.take().unwrap_or_default()
     }
 
     /// Return a shaping buffer for reuse.
-    pub fn return_shape_buffer(&mut self, buffer: harfrust::UnicodeBuffer) {
+    pub fn return_shape_buffer(&mut self, buffer: harfrust::Buffer) {
         self.shape_buffer = Some(buffer);
     }
 

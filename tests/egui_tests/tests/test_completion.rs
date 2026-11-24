@@ -156,6 +156,33 @@ fn escape_closes_popup_and_keeps_focus() {
     text_input(&harness).type_text("o");
     harness.run();
     assert!(harness.state().popup_open);
+
+    // Going back to the dismissed word keeps it open:
+    harness.key_press(Key::Backspace);
+    harness.run();
+    assert_eq!(harness.state().text, "/c");
+    assert!(harness.state().popup_open);
+}
+
+#[test]
+fn refocusing_reopens_dismissed_popup() {
+    let mut harness = harness();
+    text_input(&harness).type_text("/c");
+    harness.run();
+    harness.key_press(Key::Escape);
+    harness.run();
+    assert!(!harness.state().popup_open);
+
+    harness
+        .ctx
+        .memory_mut(|memory| memory.surrender_focus(id()));
+    harness.run();
+    assert!(!text_input_has_focus(&harness));
+
+    text_input(&harness).focus();
+    harness.run();
+    assert!(text_input_has_focus(&harness));
+    assert!(harness.state().popup_open);
 }
 
 #[test]
@@ -228,4 +255,73 @@ fn enter_without_popup_submits() {
     assert_eq!(harness.state().submitted.as_deref(), Some("hello"));
     assert_eq!(harness.state().text, "");
     assert!(text_input_has_focus(&harness));
+}
+
+/// Clicking a suggestion is a click outside the `TextEdit`, which surrenders its focus —
+/// on the release by default, on the press with [`egui::SurrenderFocusOn::Presses`].
+/// The popup must still be there to take the click.
+#[test]
+fn clicking_a_suggestion_accepts_it() {
+    for surrender_focus_on in [
+        egui::SurrenderFocusOn::Clicks,
+        egui::SurrenderFocusOn::Presses,
+    ] {
+        let mut harness = harness();
+        harness.ctx.options_mut(|options| {
+            options.input_options.surrender_focus_on = surrender_focus_on;
+        });
+        text_input(&harness).type_text("/gr");
+        harness.run();
+        assert!(harness.state().popup_open);
+
+        harness.get_by_label("/grill-with-docs ").click();
+        harness.run();
+        assert_eq!(
+            harness.state().text,
+            "/grill-with-docs ",
+            "{surrender_focus_on:?}"
+        );
+        assert!(!harness.state().popup_open, "{surrender_focus_on:?}");
+        assert!(text_input_has_focus(&harness), "{surrender_focus_on:?}");
+    }
+}
+
+/// Like [`clicking_a_suggestion_accepts_it`], but with text after the cursor.
+#[test]
+fn clicking_a_suggestion_with_cursor_mid_text() {
+    for surrender_focus_on in [
+        egui::SurrenderFocusOn::Clicks,
+        egui::SurrenderFocusOn::Presses,
+    ] {
+        let mut harness = harness();
+        harness.ctx.options_mut(|options| {
+            options.input_options.surrender_focus_on = surrender_focus_on;
+        });
+        text_input(&harness).type_text("/gr x");
+        harness.run();
+        harness.key_press(Key::ArrowLeft);
+        harness.key_press(Key::ArrowLeft);
+        harness.run();
+        assert_eq!(
+            cursor(&harness),
+            Some("/gr".len()),
+            "{surrender_focus_on:?}"
+        );
+        assert!(harness.state().popup_open, "{surrender_focus_on:?}");
+
+        harness.get_by_label("/grill-with-docs ").click();
+        harness.run();
+        assert_eq!(
+            harness.state().text,
+            "/grill-with-docs  x",
+            "{surrender_focus_on:?}"
+        );
+        assert_eq!(
+            cursor(&harness),
+            Some("/grill-with-docs ".len()),
+            "{surrender_focus_on:?}"
+        );
+        assert!(!harness.state().popup_open, "{surrender_focus_on:?}");
+        assert!(text_input_has_focus(&harness), "{surrender_focus_on:?}");
+    }
 }

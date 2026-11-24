@@ -1,12 +1,12 @@
 //! egui theme (spacing, colors, etc).
 
+use alloc::{collections::BTreeMap, sync::Arc};
 use core::ops::RangeInclusive;
-use emath::Align;
+use emath::{Align, NumExt as _, easing::Easing};
 use epaint::{
     CornerRadius, FontColorTransferFunction, Shadow, Stroke, TextOptions,
     text::{FontHinting, FontTweak, FontVariationAxis, HintingTarget, SmoothHinting},
 };
-use std::{collections::BTreeMap, sync::Arc};
 
 use crate::{
     ComboBox, CursorIcon, FontFamily, FontId, Grid, Margin, Response, RichText, TextWrapMode,
@@ -91,7 +91,7 @@ pub enum TextStyle {
     /// ```
     /// egui::TextStyle::Name("footing".into());
     /// ````
-    Name(std::sync::Arc<str>),
+    Name(alloc::sync::Arc<str>),
 }
 
 impl core::fmt::Display for TextStyle {
@@ -317,6 +317,13 @@ pub struct Style {
     /// How many seconds a typical animation should last.
     pub animation_time: f32,
 
+    /// How large hover highlights appear, e.g. on the resize line between panels.
+    ///
+    /// Note that the cursor icon is still changed immediately.
+    ///
+    /// See [`DelayedHighlight`].
+    pub hover_highlight: DelayedHighlight,
+
     /// Options to help debug why egui behaves strangely.
     ///
     /// Only available in debug builds.
@@ -341,11 +348,12 @@ pub struct Style {
     pub compact_menu_style: bool,
 }
 
-#[test]
-fn style_impl_send_sync() {
-    fn assert_send_sync<T: Send + Sync>() {}
+// Compile-time check that `Style` is `Send + Sync` on every target.
+// Deliberately not a `#[test]`: tests never run on wasm, but `cargo check` does.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<Style>();
-}
+};
 
 impl Style {
     // TODO(emilk): rename style.interact() to maybe… `style.interactive` ?
@@ -470,7 +478,7 @@ impl Spacing {
     pub fn icon_rectangles(&self, rect: Rect) -> (Rect, Rect) {
         let icon_width = self.icon_width;
         let big_icon_rect = Rect::from_center_size(
-            pos2(rect.left() + icon_width / 2.0, rect.center().y),
+            pos2(rect.left() + icon_width * 0.5, rect.center().y),
             vec2(icon_width, icon_width),
         );
 
@@ -580,6 +588,9 @@ pub struct ScrollStyle {
     pub interact_handle_opacity: f32,
 
     pub fade: ScrollFadeStyle,
+
+    /// How the scroll area keeps moving after the user lets go of a drag.
+    pub kinetic: KineticScrollStyle,
 }
 
 impl Default for ScrollStyle {
@@ -612,6 +623,7 @@ impl ScrollStyle {
             interact_handle_opacity: 1.0,
 
             fade: Default::default(),
+            kinetic: Default::default(),
         }
     }
 
@@ -697,6 +709,7 @@ impl ScrollStyle {
             interact_handle_opacity,
 
             fade,
+            kinetic,
         } = self;
 
         ui.horizontal(|ui| {
@@ -773,6 +786,9 @@ impl ScrollStyle {
 
         ui.separator();
         fade.ui(ui);
+
+        ui.separator();
+        kinetic.ui(ui);
     }
 }
 
@@ -816,6 +832,107 @@ impl ScrollFadeStyle {
                 ui.label("Fade size");
             });
         }
+    }
+}
+
+// ----------------------------------------------------------------------------
+
+/// The physics of drag-scrolling a [`crate::ScrollArea`], usually on a touch screen.
+///
+/// Controls how the content keeps coasting after the user lets go (kinetic scrolling),
+/// and how it rubber-bands when dragged past the edge.
+///
+/// The velocity decays exponentially, like it does in `UIScrollView` on iOS/macOS:
+///
+/// ```text
+/// v(t) = v₀ · exp(-t / decay_time)
+/// ```
+///
+/// which means the total coast distance is `v₀ · decay_time`,
+/// i.e. proportional to the release velocity.
+///
+/// All distances are in ui points, and all velocities in ui points per second.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(default))]
+pub struct KineticScrollStyle {
+    /// Time constant of the exponential velocity decay, in seconds.
+    ///
+    /// The velocity is reduced by a factor `e` every `decay_time` seconds,
+    /// and the total coast distance (in ui points) is `release_velocity * decay_time`,
+    /// where `release_velocity` is in ui points per second.
+    ///
+    /// `UIScrollView.DecelerationRate.normal` (0.998 per millisecond) corresponds to ≈ 0.5 s,
+    /// and `.fast` (0.99 per millisecond) corresponds to ≈ 0.1 s.
+    ///
+    /// Set to `0.0` to disable kinetic scrolling.
+    pub decay_time: f32,
+
+    /// Stop the kinetic scrolling when the remaining coast distance is shorter than this many ui points.
+    ///
+    /// The exponential decay never reaches zero velocity on its own, so we need a cutoff.
+    pub stop_distance: f32,
+
+    /// Let the user drag (or coast) past the edge of the content, with increasing resistance,
+    /// and spring back when released. Like iOS and macOS.
+    ///
+    /// Affects drag-to-scroll (touch) and trackpad scrolling,
+    /// not mouse wheels or scroll bars.
+    pub rubber_band: bool,
+}
+
+impl Default for KineticScrollStyle {
+    fn default() -> Self {
+        Self {
+            decay_time: 0.5,
+            stop_distance: 0.5,
+            rubber_band: true,
+        }
+    }
+}
+
+impl KineticScrollStyle {
+    /// Convert from a per-millisecond deceleration rate (as used by `UIScrollView.DecelerationRate`)
+    /// to a [`Self::decay_time`] in seconds.
+    ///
+    /// `0.998` (iOS normal) ≈ 0.5 s, `0.99` (iOS fast) ≈ 0.1 s.
+    pub fn decay_time_from_deceleration_rate_per_ms(rate: f32) -> f32 {
+        -1.0 / (1000.0 * rate.ln())
+    }
+
+    pub fn ui(&mut self, ui: &mut Ui) {
+        let Self {
+            decay_time,
+            stop_distance,
+            rubber_band,
+        } = self;
+
+        ui.horizontal(|ui| {
+            ui.add(
+                DragValue::new(decay_time)
+                    .speed(0.01)
+                    .range(0.0..=5.0)
+                    .suffix(" s"),
+            );
+            ui.label("Kinetic scroll decay time")
+                .on_hover_text("Velocity decays by a factor e every this many seconds.\nCoast distance = release velocity × decay time.");
+        });
+
+        if 0.0 < *decay_time {
+            ui.horizontal(|ui| {
+                ui.add(
+                    DragValue::new(stop_distance)
+                        .speed(0.1)
+                        .range(0.0..=16.0)
+                        .suffix(" pt"),
+                );
+                ui.label("Kinetic scroll stop distance")
+                    .on_hover_text("Stop when the remaining coast distance is shorter than this.");
+            });
+        }
+
+        ui.checkbox(rubber_band, "Rubber-band past the edge")
+            .on_hover_text("Let the user drag past the edge of the content, then spring back.");
     }
 }
 
@@ -944,8 +1061,100 @@ pub struct Interaction {
     pub multi_widget_text_select: bool,
 }
 
+/// A hover highlight that appears after a delay and then fades in.
+///
+/// This avoids distracting flashes when the pointer merely passes over something,
+/// such as the resize line between two panels.
+///
+/// The delay is primarily intended for large highlights, i.e. ones that cover a lot of
+/// the screen (like a resize line along a whole panel), where flashing is distracting.
+/// Small highlights, like on a button, should usually show right away.
+///
+/// The fade-in takes [`Style::animation_time`].
+///
+/// See [`crate::Ui::delayed_highlight`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(default))]
+pub struct DelayedHighlight {
+    /// How long the pointer must rest on the thing before the highlight starts to appear, in seconds.
+    pub delay: f32,
+
+    /// The easing curve of the fade-in.
+    pub easing: Easing,
+}
+
+impl Default for DelayedHighlight {
+    fn default() -> Self {
+        Self {
+            delay: 0.1,
+            easing: Easing::QuadraticIn,
+        }
+    }
+}
+
+impl DelayedHighlight {
+    /// How visible the highlight is (0-1), given how long the thing has been hovered.
+    pub fn strength(&self, fade_in_time: f32, hover_duration: f32) -> f32 {
+        let Self { delay, easing } = *self;
+        let t = hover_duration - delay;
+        if t < 0.0 {
+            0.0
+        } else if fade_in_time <= 0.0 {
+            1.0
+        } else {
+            easing.apply((t / fade_in_time).at_most(1.0))
+        }
+    }
+
+    /// Fade from `idle` towards `highlighted`, by the strength from [`crate::Ui::delayed_highlight`].
+    ///
+    /// If `idle` is invisible, only the color fades in, so the line doesn't grow from zero width.
+    pub fn fade_stroke(idle: Stroke, highlighted: Stroke, strength: f32) -> Stroke {
+        if strength <= 0.0 {
+            idle
+        } else if idle.is_empty() {
+            Stroke::new(highlighted.width, Color32::TRANSPARENT).lerp(highlighted, strength)
+        } else {
+            idle.lerp(highlighted, strength)
+        }
+    }
+
+    /// Show widgets for editing these settings.
+    pub fn ui(&mut self, ui: &mut crate::Ui) {
+        let Self { delay, easing } = self;
+        ui.horizontal(|ui| {
+            ui.label("delay");
+            ui.add(
+                DragValue::new(delay)
+                    .range(0.0..=2.0)
+                    .speed(0.01)
+                    .suffix(" s"),
+            );
+            crate::ComboBox::from_id_salt("delayed_highlight_easing")
+                .selected_text(format!("{easing:?}"))
+                .show_ui(ui, |ui| {
+                    for option in Easing::ALL {
+                        ui.selectable_value(easing, option, format!("{option:?}"));
+                    }
+                });
+        });
+    }
+}
+
+/// How a highlight from [`crate::Ui::delayed_highlight`] disappears
+/// when the thing is no longer hovered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FadeOut {
+    /// Disappear right away.
+    Instant,
+
+    /// Fade out over [`Style::animation_time`].
+    Animated,
+}
+
 /// Look and feel of the text cursor.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 pub struct TextCursorStyle {
@@ -1049,8 +1258,10 @@ pub struct Visuals {
     /// Defaults to [`Self::extreme_bg_color`].
     pub text_edit_bg_color: Option<Color32>,
 
-    /// Background color behind code-styled monospaced labels.
-    pub code_bg_color: Color32,
+    /// How code-styled monospaced labels look, e.g. [`crate::RichText::code`].
+    ///
+    /// Also known as `pre` or `code` blocks, after the HTML tags.
+    pub code: CodeVisuals,
 
     /// A good color for warning text (e.g. orange).
     pub warn_fg_color: Color32,
@@ -1197,6 +1408,37 @@ pub struct Selection {
 
     /// Color of selected text.
     pub stroke: Stroke,
+}
+
+/// How code-styled monospaced labels look, e.g. [`crate::RichText::code`].
+///
+/// Also known as `pre` or `code` blocks, after the HTML tags.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(default))]
+pub struct CodeVisuals {
+    /// Background color behind the code.
+    pub bg_color: Color32,
+
+    /// Outline of the background, painted inside its edge.
+    pub stroke: Stroke,
+
+    /// Text color of the code.
+    ///
+    /// If `None` (the default), code uses the same color as other text.
+    pub text_color: Option<Color32>,
+
+    /// Corner radius of the background.
+    pub corner_radius: CornerRadius,
+
+    /// Inner margin: the space between the code text and the edges of the background.
+    /// A positive margin makes the background bigger than the text.
+    ///
+    /// The left and right margins take up space in the layout,
+    /// so the background never overlaps neighboring text.
+    /// The top and bottom margins are only visual: they do not affect the layout.
+    /// Negative top and bottom margins keep the code backgrounds on adjacent rows apart.
+    pub margin: Margin,
 }
 
 /// Visual style for IME composition.
@@ -1378,6 +1620,16 @@ pub struct DebugOptions {
     /// previous frame.
     pub warn_if_rect_changes_id: bool,
 
+    /// Show a warning if [`crate::Context::request_discard`] has been called this many frames
+    /// in a row.
+    ///
+    /// Multi-pass frames are expensive, so this is likely a bug.
+    ///
+    /// `None` turns the warning off.
+    ///
+    /// Default is `Some(3)`.
+    pub consecutive_multipass_warning_cutoff: Option<usize>,
+
     /// If true, highlight widgets that are not aligned to [`emath::GUI_ROUNDING`].
     ///
     /// See [`emath::GuiRounding`] for more.
@@ -1406,6 +1658,7 @@ impl Default for DebugOptions {
             show_focusable_widgets: false,
             show_widget_hits: false,
             warn_if_rect_changes_id: false,
+            consecutive_multipass_warning_cutoff: Some(3),
             show_unaligned: cfg!(debug_assertions),
             show_focused_widget: false,
         }
@@ -1442,6 +1695,7 @@ impl Default for Style {
             interaction: Interaction::default(),
             visuals: Visuals::default(),
             animation_time: 0.2,
+            hover_highlight: DelayedHighlight::default(),
             #[cfg(debug_assertions)]
             debug: Default::default(),
             explanation_tooltips: false,
@@ -1516,7 +1770,7 @@ impl Visuals {
             faint_bg_color: Color32::from_additive_luminance(5), // visible, but barely so
             extreme_bg_color: Color32::from_gray(10),            // e.g. TextEdit background
             text_edit_bg_color: None, // use `extreme_bg_color` by default
-            code_bg_color: Color32::from_gray(64),
+            code: CodeVisuals::dark(),
             warn_fg_color: Color32::from_rgb(255, 143, 0), // orange
             error_fg_color: Color32::from_rgb(255, 0, 0),  // red
 
@@ -1579,7 +1833,7 @@ impl Visuals {
             hyperlink_color: Color32::from_rgb(0, 155, 255),
             faint_bg_color: Color32::from_additive_luminance(5), // visible, but barely so
             extreme_bg_color: Color32::from_gray(255),           // e.g. TextEdit background
-            code_bg_color: Color32::from_gray(230),
+            code: CodeVisuals::light(),
             warn_fg_color: Color32::from_rgb(255, 100, 0), // slightly orange red. it's difficult to find a warning color that pops on bright background.
             error_fg_color: Color32::from_rgb(255, 0, 0),  // red
 
@@ -1634,6 +1888,38 @@ impl Selection {
 }
 
 impl Default for Selection {
+    fn default() -> Self {
+        Self::dark()
+    }
+}
+
+impl CodeVisuals {
+    /// The default for dark mode.
+    pub fn dark() -> Self {
+        Self {
+            bg_color: Color32::from_gray(48),
+            stroke: Stroke::NONE,
+            text_color: None,
+            corner_radius: CornerRadius::same(1),
+            margin: Margin {
+                left: 2,
+                right: 2,
+                top: -1,
+                bottom: -1,
+            },
+        }
+    }
+
+    /// The default for light mode.
+    pub fn light() -> Self {
+        Self {
+            bg_color: Color32::from_gray(230),
+            ..Self::dark()
+        }
+    }
+}
+
+impl Default for CodeVisuals {
     fn default() -> Self {
         Self::dark()
     }
@@ -1800,6 +2086,7 @@ impl Style {
             interaction,
             visuals,
             animation_time,
+            hover_highlight,
             #[cfg(debug_assertions)]
             debug,
             explanation_tooltips,
@@ -1900,6 +2187,12 @@ impl Style {
                     .speed(0.02)
                     .suffix(" s"),
             );
+            ui.end_row();
+
+            ui.label("Hover highlight").on_hover_text(
+                "Delay and easing of hover highlights. They fade in over the animation duration.",
+            );
+            hover_highlight.ui(ui);
             ui.end_row();
         });
 
@@ -2188,6 +2481,56 @@ impl Widgets {
     }
 }
 
+impl CodeVisuals {
+    pub fn ui(&mut self, ui: &mut crate::Ui) {
+        let Self {
+            bg_color,
+            stroke,
+            text_color,
+            corner_radius,
+            margin,
+        } = self;
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.label("For monospaced inlined text ");
+            ui.code("like this");
+            ui.label(".");
+        });
+
+        Grid::new("code_visuals").num_columns(2).show(ui, |ui| {
+            ui.label("Background color");
+            ui.color_edit_button_srgba(bg_color);
+            ui.end_row();
+
+            ui.label("Stroke");
+            ui.add(stroke);
+            ui.end_row();
+
+            ui.label("Text color");
+            ui.horizontal(|ui| {
+                let mut set = text_color.is_some();
+                ui.checkbox(&mut set, "");
+                if set {
+                    let default_color = ui.visuals().text_color();
+                    ui.color_edit_button_srgba(text_color.get_or_insert(default_color));
+                } else {
+                    *text_color = None;
+                }
+            });
+            ui.end_row();
+
+            ui.label("Corner radius");
+            ui.add(corner_radius);
+            ui.end_row();
+
+            ui.label("Margin");
+            ui.add(margin);
+            ui.end_row();
+        });
+    }
+}
+
 impl Selection {
     pub fn ui(&mut self, ui: &mut crate::Ui) {
         let Self { bg_fill, stroke } = self;
@@ -2295,7 +2638,7 @@ impl Visuals {
             faint_bg_color,
             extreme_bg_color,
             text_edit_bg_color,
-            code_bg_color,
+            code,
             warn_fg_color,
             error_fg_color,
 
@@ -2408,18 +2751,6 @@ impl Visuals {
 
                 ui_text_color(ui, hyperlink_color, "hyperlink_color");
 
-                ui.label(RichText::new("Code background").code())
-                    .on_hover_ui(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 0.0;
-                            ui.label("For monospaced inlined text ");
-                            ui.code("like this");
-                            ui.label(".");
-                        });
-                    });
-                ui.color_edit_button_srgba(code_bg_color);
-                ui.end_row();
-
                 ui.label("Weak text alpha");
                 ui.add_enabled(
                     weak_text_color.is_none(),
@@ -2498,6 +2829,7 @@ impl Visuals {
 
         ui.collapsing("Widgets", |ui| widgets.ui(ui));
         ui.collapsing("Selection", |ui| selection.ui(ui));
+        ui.collapsing("Code", |ui| code.ui(ui));
         ui.collapsing("IME composition", |ui| ime_composition.ui(ui));
 
         ui.collapsing("Misc", |ui| {
@@ -2650,6 +2982,7 @@ impl DebugOptions {
             show_focusable_widgets,
             show_widget_hits,
             warn_if_rect_changes_id,
+            consecutive_multipass_warning_cutoff,
             show_unaligned,
             show_focused_widget,
         } = self;
@@ -2690,6 +3023,24 @@ impl DebugOptions {
             warn_if_rect_changes_id,
             "Warn if a Rect changes Id between frames",
         );
+
+        ui.horizontal(|ui| {
+            let mut warn = consecutive_multipass_warning_cutoff.is_some();
+            ui.checkbox(
+                &mut warn,
+                "Warn if request_discard is called many frames in a row",
+            );
+            if warn {
+                let cutoff = consecutive_multipass_warning_cutoff.get_or_insert(3);
+                ui.add(
+                    DragValue::new(cutoff)
+                        .range(1..=usize::MAX)
+                        .suffix(" frames"),
+                );
+            } else {
+                *consecutive_multipass_warning_cutoff = None;
+            }
+        });
 
         ui.checkbox(
             show_unaligned,
@@ -2830,7 +3181,7 @@ impl Widget for &mut Margin {
         // Apply the checkbox:
         if same {
             *self =
-                Margin::from((self.leftf() + self.rightf() + self.topf() + self.bottomf()) / 4.0);
+                Margin::from((self.leftf() + self.rightf() + self.topf() + self.bottomf()) * 0.25);
         } else {
             // Make sure it is not same:
             if self.is_same() {
@@ -3192,5 +3543,25 @@ pub fn font_tweak_ui(ui: &mut Ui, tweak: &mut FontTweak, axes: &[FontVariationAx
 impl Widget for &mut FontTweak {
     fn ui(self, ui: &mut Ui) -> Response {
         font_tweak_ui(ui, self, &[])
+    }
+}
+
+#[cfg(test)]
+mod delayed_highlight_tests {
+    use super::{DelayedHighlight, Easing};
+
+    #[test]
+    fn strength() {
+        let highlight = DelayedHighlight {
+            delay: 0.2,
+            easing: Easing::Linear,
+        };
+        assert_eq!(highlight.strength(0.1, 0.0), 0.0);
+        assert_eq!(highlight.strength(0.1, 0.2), 0.0);
+        assert!((highlight.strength(0.1, 0.25) - 0.5).abs() < 1e-5);
+        assert_eq!(highlight.strength(0.1, 0.3), 1.0);
+        assert_eq!(highlight.strength(0.1, 10.0), 1.0);
+
+        assert_eq!(highlight.strength(0.0, 0.2), 1.0);
     }
 }

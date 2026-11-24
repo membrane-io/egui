@@ -136,6 +136,7 @@ mod tests {
     #![expect(clippy::disallowed_methods)] // Ok for tests
 
     use crate::mutex::Mutex;
+    use alloc::sync::Arc;
     use core::time::Duration;
 
     #[test]
@@ -148,7 +149,6 @@ mod tests {
 
     #[test]
     fn lock_multiple_threads() {
-        use std::sync::Arc;
         let one = Arc::new(Mutex::new(()));
         let our_lock = one.lock();
         let other_thread = {
@@ -169,6 +169,7 @@ mod tests_rwlock {
     #![expect(clippy::disallowed_methods)] // Ok for tests
 
     use crate::mutex::RwLock;
+    use alloc::sync::Arc;
     use core::time::Duration;
 
     #[test]
@@ -181,7 +182,6 @@ mod tests_rwlock {
 
     #[test]
     fn rwlock_multiple_threads() {
-        use std::sync::Arc;
         let one = Arc::new(RwLock::new(()));
         let our_lock = one.write();
         let other_thread1 = {
@@ -237,8 +237,6 @@ mod tests_rwlock {
 
     #[test]
     fn rwlock_short_read_foreign_read_write_reentrancy() {
-        use std::sync::Arc;
-
         let lock = Arc::new(RwLock::new(()));
 
         // Thread #0 grabs a read lock
@@ -263,8 +261,6 @@ mod tests_rwlock {
     #[test]
     #[should_panic]
     fn rwlock_read_foreign_read_write_reentrancy() {
-        use std::sync::Arc;
-
         let lock = Arc::new(RwLock::new(()));
 
         // Thread #0 grabs a read lock

@@ -181,7 +181,7 @@ impl ConcavePolygonDemo {
                         feathering_size_in_pixels: self.feathering_override * pixels_per_point,
                         ..Default::default()
                     },
-                    ui.fonts(|f| f.font_image_size()),
+                    ui.fonts(|f| f.font_image_resolution()),
                     vec![],
                 );
                 let shape = if self.use_convex {
@@ -207,7 +207,7 @@ impl ConcavePolygonDemo {
                 let mut tessellator = epaint::Tessellator::new(
                     pixels_per_point,
                     Default::default(),
-                    ui.fonts(|f| f.font_image_size()),
+                    ui.fonts(|f| f.font_image_resolution()),
                     vec![],
                 );
                 tessellator.tessellate_path(&shape, &mut mesh);

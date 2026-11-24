@@ -1,12 +1,12 @@
+use alloc::sync::Arc;
 use core::{ops::Range, str::FromStr as _};
-use std::sync::Arc;
 
 use super::{
     cursor::{CCursor, LayoutCursor},
     glyph_atlas::UvRect,
     index::{ByteIndex, ByteRange, ByteRangeExt as _, CharIndex},
 };
-use crate::{Color32, FontId, Mesh, Stroke, text::FontsView};
+use crate::{Color32, CornerRadius, FontId, Margin, Mesh, Stroke, text::FontsView};
 use emath::{Align, GuiRounding as _, NumExt as _, OrderedFloat, Pos2, Rect, Vec2, pos2, vec2};
 pub use font_types::Tag;
 use smallvec::SmallVec;
@@ -126,7 +126,8 @@ impl LayoutJob {
     pub fn simple(text: String, font_id: FontId, color: Color32, wrap_width: f32) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0.into(),
+                leading_space: 0.0,
+                wrap_indent: 0.0,
                 byte_range: ByteRange::full(&text),
                 format: TextFormat::simple(font_id, color),
             }],
@@ -145,7 +146,8 @@ impl LayoutJob {
     pub fn simple_format(text: String, format: TextFormat) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0.into(),
+                leading_space: 0.0,
+                wrap_indent: 0.0,
                 byte_range: ByteRange::full(&text),
                 format,
             }],
@@ -160,7 +162,8 @@ impl LayoutJob {
     pub fn simple_singleline(text: String, font_id: FontId, color: Color32) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0.into(),
+                leading_space: 0.0,
+                wrap_indent: 0.0,
                 byte_range: ByteRange::full(&text),
                 format: TextFormat::simple(font_id, color),
             }],
@@ -175,7 +178,8 @@ impl LayoutJob {
     pub fn single_section(text: String, format: TextFormat) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0.into(),
+                leading_space: 0.0,
+                wrap_indent: 0.0,
                 byte_range: ByteRange::full(&text),
                 format,
             }],
@@ -197,8 +201,6 @@ impl LayoutJob {
     /// `leading_space`, it is merged into that section instead of adding a new one.
     /// This keeps the section count down and lets text shaping (e.g. kerning) work
     /// across the appended text, since shaping is done per [`LayoutSection`].
-    // TODO(juan): Deprecate this in favor of push
-    // #[deprecated(note = "Use push or push_with_leading_space instead")]
     pub fn append(&mut self, text: &str, leading_space: f32, format: TextFormat) {
         let start = self.text.len();
         self.text += text;
@@ -215,29 +217,8 @@ impl LayoutJob {
         }
 
         self.sections.push(LayoutSection {
-            leading_space: leading_space.into(),
-            byte_range,
-            format,
-        });
-    }
-
-    /// Helper for adding a new section when building a [`LayoutJob`].
-    pub fn push(&mut self, text: &str, format: TextFormat) {
-        self.append(text, 0.0, format);
-    }
-
-    /// Helper for adding a new section when building a [`LayoutJob`].
-    pub fn push_with_leading_space(
-        &mut self,
-        text: &str,
-        leading_space: LeadingSpace,
-        format: TextFormat,
-    ) {
-        let start = self.text.len();
-        self.text += text;
-        let byte_range = ByteIndex(start)..ByteIndex(self.text.len());
-        self.sections.push(LayoutSection {
             leading_space,
+            wrap_indent: 0.0,
             byte_range,
             format,
         });
@@ -357,47 +338,6 @@ impl core::hash::Hash for LayoutJob {
 
 // ----------------------------------------------------------------------------
 
-/// Specifies how leading space is applied to a section.
-#[derive(Copy, Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-pub enum LeadingSpace {
-    /// Only the first row of this section will have this leading space.
-    FirstRow(f32),
-    /// All wrapped rows of this section will be indented by this amount.
-    Indent(f32),
-}
-
-impl LeadingSpace {
-    pub fn value(&self) -> f32 {
-        match self {
-            LeadingSpace::FirstRow(value) => *value,
-            LeadingSpace::Indent(value) => *value,
-        }
-    }
-}
-
-impl core::hash::Hash for LeadingSpace {
-    #[inline]
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            LeadingSpace::FirstRow(value) => {
-                0u8.hash(state);
-                OrderedFloat(*value).hash(state);
-            }
-            LeadingSpace::Indent(value) => {
-                1u8.hash(state);
-                OrderedFloat(*value).hash(state);
-            }
-        }
-    }
-}
-
-impl From<f32> for LeadingSpace {
-    fn from(value: f32) -> Self {
-        LeadingSpace::FirstRow(value)
-    }
-}
-
 /// A contiguous range of [`LayoutJob::text`] that shares the same [`TextFormat`].
 ///
 /// The sections of a [`LayoutJob`] are ordered and together cover the whole text
@@ -407,17 +347,45 @@ impl From<f32> for LeadingSpace {
 /// This means kerning (and ligatures) are only correct _within_ a single section,
 /// and not across the boundary between two adjacent sections.
 /// For this reason [`LayoutJob::append`] merges consecutive sections when possible.
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct LayoutSection {
     /// Can be used for first row indentation.
-    pub leading_space: LeadingSpace,
+    pub leading_space: f32,
+
+    /// Where the rows that a paragraph wraps onto start, in points.
+    ///
+    /// Use it for a hanging indent, e.g. so the wrapped rows of a list item line up
+    /// with the text after its bullet instead of with the bullet.
+    ///
+    /// The value of the section that holds the first character of a paragraph applies
+    /// to that whole paragraph. The first row of a paragraph is never indented by it:
+    /// use [`Self::leading_space`] for that.
+    ///
+    /// Only applies to left-aligned text that is neither justified nor centered.
+    pub wrap_indent: f32,
 
     /// Range into [`LayoutJob::text`].
     pub byte_range: ByteRange,
 
     /// How to format the text in this section (font, color, etc).
     pub format: TextFormat,
+}
+
+impl core::hash::Hash for LayoutSection {
+    #[inline]
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        let Self {
+            leading_space,
+            wrap_indent,
+            byte_range,
+            format,
+        } = self;
+        OrderedFloat(*leading_space).hash(state);
+        OrderedFloat(*wrap_indent).hash(state);
+        byte_range.hash(state);
+        format.hash(state);
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -540,37 +508,58 @@ pub struct TextFormat {
     ///
     /// If `None` (the default), the line height is determined by the font.
     ///
+    /// If the line height differs from the height of the font,
+    /// the text is vertically centered within the line height (like in CSS),
+    /// regardless of [`Self::valign`].
+    ///
     /// For even text it is recommended you round this to an even number of _pixels_.
     pub line_height: Option<f32>,
 
     /// Text color
     pub color: Color32,
 
+    /// Background color. The background covers the font, not [`Self::line_height`].
     pub background: Color32,
 
     /// Amount to expand background fill by.
     ///
+    /// This does not affect the layout, so the background may overlap neighboring text.
+    ///
     /// Default: 1.0
-    pub expand_bg: Vec2,
+    pub expand_bg: f32,
+
+    /// Inner margin of the [`Self::background`]: the space between the text and the edges of
+    /// the background. A positive margin makes the background bigger than the text.
+    ///
+    /// The left and right margins take up space in the layout, so the background never
+    /// overlaps neighboring text.
+    /// The top and bottom margins are only visual: they do not affect the layout,
+    /// since that would change the row height.
+    /// Use negative top and bottom margins to keep the backgrounds of adjacent rows apart.
+    ///
+    /// This is applied in addition to [`Self::expand_bg`].
+    ///
+    /// Default: [`Margin::ZERO`]
+    pub background_margin: Margin,
+
+    /// Corner radius of the [`Self::background`].
+    ///
+    /// Default: [`CornerRadius::ZERO`]
+    pub background_corner_radius: CornerRadius,
+
+    /// Outline of the [`Self::background`], painted inside its edge.
+    ///
+    /// Default: [`Stroke::NONE`]
+    pub background_stroke: Stroke,
 
     pub coords: VariationCoords,
 
-    /// Corner radius for background rectangles.
-    /// Default: 0.0 (no rounding)
-    pub bg_corner_radius: u8,
-
-    /// Border drawn inside the edge of a background rectangle.
-    ///
-    /// The background rectangle takes the stroke colour, and the fill sits inside it, so the
-    /// border follows `bg_corner_radius`. A fill that is not opaque lets the stroke colour through.
-    ///
-    /// Default: [`Stroke::NONE`] (no border)
-    pub bg_stroke: Stroke,
-
     pub italics: bool,
 
+    /// Underline, at the bottom of the font, not of [`Self::line_height`].
     pub underline: Stroke,
 
+    /// Strikethrough, at the middle of the font, not of [`Self::line_height`].
     pub strikethrough: Stroke,
 
     /// If you use a small font and [`Align::TOP`] you
@@ -582,6 +571,13 @@ pub struct TextFormat {
     /// If you use [`Align::Center`], you get text that is centered
     /// around a common center-line, which is nice when mixining emojis
     /// and normal text in e.g. a button.
+    ///
+    /// The alignment is applied to the difference between the height of the row
+    /// and the [`Self::line_height`] of this section.
+    /// Any extra space from an explicit [`Self::line_height`] is always split evenly
+    /// above and below the text.
+    ///
+    /// Default: [`Align::BOTTOM`].
     pub valign: Align,
 }
 
@@ -594,10 +590,11 @@ impl Default for TextFormat {
             line_height: None,
             color: Color32::GRAY,
             background: Color32::TRANSPARENT,
-            expand_bg: Vec2::new(1.0, 1.0),
+            expand_bg: 1.0,
+            background_margin: Margin::ZERO,
+            background_corner_radius: CornerRadius::ZERO,
+            background_stroke: Stroke::NONE,
             coords: VariationCoords::default(),
-            bg_corner_radius: 0,
-            bg_stroke: Stroke::NONE,
             italics: false,
             underline: Stroke::NONE,
             strikethrough: Stroke::NONE,
@@ -616,9 +613,10 @@ impl core::hash::Hash for TextFormat {
             color,
             background,
             expand_bg,
+            background_margin,
+            background_corner_radius,
+            background_stroke,
             coords,
-            bg_corner_radius,
-            bg_stroke,
             italics,
             underline,
             strikethrough,
@@ -631,11 +629,11 @@ impl core::hash::Hash for TextFormat {
         }
         color.hash(state);
         background.hash(state);
-        emath::OrderedFloat(expand_bg.x).hash(state);
-        emath::OrderedFloat(expand_bg.y).hash(state);
+        emath::OrderedFloat(*expand_bg).hash(state);
+        background_margin.hash(state);
+        background_corner_radius.hash(state);
+        background_stroke.hash(state);
         coords.hash(state);
-        bg_corner_radius.hash(state);
-        bg_stroke.hash(state);
         italics.hash(state);
         underline.hash(state);
         strikethrough.hash(state);
@@ -675,7 +673,7 @@ pub enum TextWrapMode {
 }
 
 /// Controls the text wrapping and elision of a [`LayoutJob`].
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct TextWrapping {
     /// Wrap text so that no row is wider than this.
@@ -1016,12 +1014,11 @@ impl Glyph {
         Rect::from_min_size(self.pos - vec2(0.0, self.font_ascent), self.size())
     }
 
-    /// Extents for painting [`TextFormat::background`].
+    /// The rect of the font around this glyph, from the top to the bottom of the font.
     ///
-    /// Uses [`Self::font_height`] instead of [`Self::line_height`] so a custom
-    /// [`TextFormat::line_height`] only affects row spacing and alignment, not background size.
+    /// Unlike [`Self::logical_rect`], the height of this rect ignores [`TextFormat::line_height`].
     #[inline]
-    pub fn background_rect(&self) -> Rect {
+    pub fn font_rect(&self) -> Rect {
         Rect::from_min_size(
             self.pos - vec2(0.0, self.font_ascent),
             vec2(self.advance_width, self.font_height),

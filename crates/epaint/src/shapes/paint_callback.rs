@@ -1,9 +1,10 @@
+use alloc::sync::Arc;
 use core::any::Any;
-use std::sync::Arc;
 
 use crate::*;
 
 /// Information passed along with [`PaintCallback`] ([`Shape::Callback`]).
+#[derive(Clone, Copy)]
 pub struct PaintCallbackInfo {
     /// Viewport in points.
     ///

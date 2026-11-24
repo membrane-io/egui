@@ -3,12 +3,12 @@ use crate::{
     Response, SizedAtom, SizedAtomKind, Stroke, Ui, WidgetAtom,
     text_selection::LabelSelectionState,
 };
+use alloc::sync::Arc;
 use core::ops::{Deref, DerefMut};
 use emath::{Align2, GuiRounding as _, NumExt as _, Rect, Vec2};
 use epaint::text::TextWrapMode;
 use epaint::{Color32, Galley};
 use smallvec::SmallVec;
-use std::sync::Arc;
 
 /// The `(main, cross)` axis indices for `direction`, for indexing a [`Vec2`] (0 = x, 1 = y).
 #[inline]
@@ -474,7 +474,7 @@ impl<'atom> SizedContainerAtom<'atom> {
         })
     }
 
-    pub fn iter_texts(&self) -> impl Iterator<Item = &Arc<Galley>> + use<'atom, '_> {
+    pub fn iter_texts(&self) -> impl Iterator<Item = &Arc<Galley>> {
         self.iter_kinds().filter_map(|kind| {
             if let SizedAtomKind::Text(text) = kind {
                 Some(text)
@@ -484,7 +484,7 @@ impl<'atom> SizedContainerAtom<'atom> {
         })
     }
 
-    pub fn iter_texts_mut(&mut self) -> impl Iterator<Item = &mut Arc<Galley>> + use<'atom, '_> {
+    pub fn iter_texts_mut(&mut self) -> impl Iterator<Item = &mut Arc<Galley>> {
         self.iter_kinds_mut().filter_map(|kind| {
             if let SizedAtomKind::Text(text) = kind {
                 Some(text)

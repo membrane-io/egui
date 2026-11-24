@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 use emath::OrderedFloat;
 use nohash_hasher::IntMap;
@@ -184,6 +184,7 @@ impl GalleyCache {
             for section in &job.sections[current_section..job.sections.len()] {
                 let LayoutSection {
                     leading_space,
+                    wrap_indent,
                     byte_range: section_range,
                     format,
                 } = section;
@@ -212,8 +213,9 @@ impl GalleyCache {
                         leading_space: if ByteIndex(start) <= section_range.start {
                             *leading_space
                         } else {
-                            0.0.into()
+                            0.0
                         },
+                        wrap_indent: *wrap_indent,
                         byte_range: new_range,
                         format: format.clone(),
                     });
@@ -269,8 +271,6 @@ fn should_cache_each_paragraph_individually(job: &LayoutJob) -> bool {
 #[cfg(feature = "default_fonts")]
 #[cfg(test)]
 mod tests {
-    use core::f32;
-
     use super::*;
     use crate::text::{FontDefinitions, FontFamily, FontId, TextOptions, TextWrapping};
     use crate::{Stroke, text::TextFormat};

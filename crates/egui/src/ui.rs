@@ -1,13 +1,25 @@
 #![warn(missing_docs)] // Let's keep `Ui` well-documented.
 #![expect(clippy::use_self)]
 
+use alloc::sync::Arc;
 use core::{any::Any, ops::Deref};
-use std::sync::Arc;
 
-use crate::containers::menu;
-use crate::{IdSource, containers::*, ecolor::*, layout::*, placer::Placer, widgets::*, *};
-use crate::{class, class::HasClasses as _};
+use crate::class::HasClasses as _;
+use crate::{containers::*, ecolor::*, layout::*, placer::Placer, widgets::*, *};
 use emath::GuiRounding as _;
+
+/// Stored state for [`Ui::delayed_highlight`].
+#[derive(Clone, Copy, Debug, Default)]
+struct DelayedHighlightState {
+    /// When the thing started being hovered or active.
+    hover_start: Option<f64>,
+
+    /// The strength returned last time.
+    strength: f32,
+
+    /// The [`Context::cumulative_frame_nr`] of the last update.
+    frame_nr: u64,
+}
 
 // ----------------------------------------------------------------------------
 
@@ -948,6 +960,117 @@ impl Ui {
     }
 }
 
+/// # Animation
+impl Ui {
+    /// How strongly to show a hover highlight, in the range [0, 1].
+    ///
+    /// Returns `0.0` until `state` has been [`HighlightState::Hovered`] for [`DelayedHighlight::delay`] seconds,
+    /// then fades in (with [`DelayedHighlight::easing`]) to `1.0` over [`Style::animation_time`].
+    /// The settings come from [`Style::hover_highlight`].
+    ///
+    /// This avoids distracting flashes when the pointer merely passes over something,
+    /// e.g. the resize line between panels.
+    ///
+    /// The delay is primarily intended for large highlights, i.e. ones that cover a lot of
+    /// the screen (like a resize line along a whole panel), where flashing is distracting.
+    /// Small highlights, like on a button, should usually show right away.
+    ///
+    /// While [`HighlightState::Active`], returns `1.0` right away.
+    /// When [`HighlightState::Idle`], `fade_out` decides how the highlight disappears.
+    ///
+    /// The `id` must be unique for the thing being highlighted.
+    /// Requests a repaint when needed.
+    #[track_caller] // To track repaint cause
+    pub fn delayed_highlight(&self, id: Id, state: HighlightState, fade_out: FadeOut) -> f32 {
+        let ctx = self.ctx();
+        let style = self.style();
+        let animation_time = style.animation_time;
+        let highlight = style.hover_highlight;
+
+        let state_id = id.with("delayed_highlight");
+        let frame_nr = ctx.cumulative_frame_nr();
+        let (now, dt) = self.input(|i| (i.time, i.stable_dt));
+
+        // Forget state that wasn't updated last frame,
+        // e.g. if the thing was hidden while hovered:
+        let previous = ctx
+            .data(|data| data.get_temp::<DelayedHighlightState>(state_id))
+            .filter(|state| frame_nr <= state.frame_nr + 1)
+            .unwrap_or_default();
+
+        let hover_start =
+            (state != HighlightState::Idle).then(|| previous.hover_start.unwrap_or(now));
+
+        let strength = if state == HighlightState::Active {
+            1.0
+        } else if let Some(hover_start) = hover_start {
+            let hover_duration = (now - hover_start) as f32;
+            if hover_duration < highlight.delay {
+                ctx.request_repaint_after_secs(highlight.delay - hover_duration);
+            } else if hover_duration < highlight.delay + animation_time {
+                ctx.request_repaint();
+            }
+            highlight
+                .strength(animation_time, hover_duration)
+                .max(previous.strength)
+        } else {
+            match fade_out {
+                FadeOut::Instant => 0.0,
+                FadeOut::Animated => {
+                    let faded = if 0.0 < animation_time {
+                        (previous.strength - dt / animation_time).max(0.0)
+                    } else {
+                        0.0
+                    };
+                    if 0.0 < faded {
+                        ctx.request_repaint();
+                    }
+                    faded
+                }
+            }
+        };
+
+        ctx.data_mut(|data| {
+            if hover_start.is_none() && strength <= 0.0 {
+                data.remove_temp::<DelayedHighlightState>(state_id);
+            } else {
+                data.insert_temp(
+                    state_id,
+                    DelayedHighlightState {
+                        hover_start,
+                        strength,
+                        frame_nr,
+                    },
+                );
+            }
+        });
+
+        strength
+    }
+
+    /// The stroke of a resize line, e.g. the splitter between two panels.
+    ///
+    /// While [`HighlightState::Hovered`], fades from `idle_stroke` to the hovered stroke of
+    /// [`Visuals::widgets`] using [`Self::delayed_highlight`], so the line doesn't flash every
+    /// time the pointer passes over it.
+    /// While [`HighlightState::Active`], shows the active stroke right away.
+    ///
+    /// Call this every frame, also when idle.
+    /// The `id` must be unique for the resize line.
+    #[track_caller] // To track repaint cause
+    pub fn resize_line_stroke(&self, id: Id, state: HighlightState, idle_stroke: Stroke) -> Stroke {
+        let strength = self.delayed_highlight(id, state, FadeOut::Instant);
+
+        let widgets = &self.visuals().widgets;
+        match state {
+            HighlightState::Active => widgets.active.fg_stroke,
+            HighlightState::Idle | HighlightState::Hovered => {
+                DelayedHighlight::fade_stroke(idle_stroke, widgets.hovered.fg_stroke, strength)
+            }
+        }
+    }
+}
+
 /// # Interaction
 impl Ui {
     /// Check for clicks, drags and/or hover on a specific region of this [`Ui`].
@@ -1496,7 +1619,7 @@ impl Ui {
     /// let (response, painter) = ui.allocate_painter(size, Sense::hover());
     /// let rect = response.rect;
     /// let c = rect.center();
-    /// let r = rect.width() / 2.0 - 1.0;
+    /// let r = rect.width() * 0.5 - 1.0;
     /// let color = Color32::from_gray(128);
     /// let stroke = Stroke::new(1.0, color);
     /// painter.circle_stroke(c, r, stroke);
@@ -2355,9 +2478,9 @@ impl Ui {
     ///
     /// The name must be unique within the current parent,
     /// or you need to use [`CollapsingHeader::id_salt`].
-    pub fn collapsing<R>(
+    pub fn collapsing<'a, R>(
         &mut self,
-        heading: impl Into<WidgetText>,
+        heading: impl IntoAtoms<'a>,
         add_contents: impl FnOnce(&mut Ui) -> R,
     ) -> CollapsingResponse<R> {
         CollapsingHeader::new(heading).show(self, add_contents)
@@ -2826,7 +2949,14 @@ impl Ui {
     ///
     /// Returns the dropped item, if it was released this frame.
     ///
-    /// The given frame is used for its margins, but the color is ignored.
+    /// The margins, corner radius and shadow of the given frame are always used.
+    ///
+    /// When nothing is being dragged, the frame's own fill and stroke are kept,
+    /// unless the frame has no styling of its own (transparent fill and no visible stroke,
+    /// e.g. [`Frame::default`]), in which case the inactive widget style is used,
+    /// so the drop zone is still visible.
+    ///
+    /// During a drag, the fill and stroke are always replaced with the drop target visuals.
     #[doc(alias = "drag and drop")]
     pub fn dnd_drop_zone<Payload, R>(
         &mut self,
@@ -2844,28 +2974,30 @@ impl Ui {
         let inner = add_contents(&mut frame.content_ui);
         let response = frame.allocate_space(self);
 
-        // NOTE: we use `response.contains_pointer` here instead of `hovered`, because
-        // `hovered` is always false when another widget is being dragged.
-        let style = if is_anything_being_dragged
-            && can_accept_what_is_being_dragged
-            && response.contains_pointer()
-        {
-            self.visuals().widgets.active
-        } else {
-            self.visuals().widgets.inactive
-        };
+        let has_own_styling =
+            frame.frame.fill != Color32::TRANSPARENT || !frame.frame.stroke.is_empty();
 
-        let mut fill = style.bg_fill;
-        let mut stroke = style.bg_stroke;
+        if is_anything_being_dragged || !has_own_styling {
+            // NOTE: we use `response.contains_pointer` here instead of `hovered`, because
+            // `hovered` is always false when another widget is being dragged.
+            let style = if can_accept_what_is_being_dragged && response.contains_pointer() {
+                self.visuals().widgets.active
+            } else {
+                self.visuals().widgets.inactive
+            };
 
-        if is_anything_being_dragged && !can_accept_what_is_being_dragged {
-            // When dragging something else, show that it can't be dropped here:
-            fill = self.visuals().disable(fill);
-            stroke.color = self.visuals().disable(stroke.color);
+            let mut fill = style.bg_fill;
+            let mut stroke = style.bg_stroke;
+
+            if is_anything_being_dragged && !can_accept_what_is_being_dragged {
+                // When dragging something else, show that it can't be dropped here:
+                fill = self.visuals().disable(fill);
+                stroke.color = self.visuals().disable(stroke.color);
+            }
+
+            frame.frame.fill = fill;
+            frame.frame.stroke = stroke;
         }
-
-        frame.frame.fill = fill;
-        frame.frame.stroke = stroke;
 
         frame.paint(self);
 
@@ -3038,7 +3170,7 @@ impl Drop for Ui {
 /// Show this rectangle to the user if certain debug options are set.
 #[cfg(debug_assertions)]
 fn register_rect(ui: &Ui, rect: Rect) {
-    use emath::{Align2, GuiRounding as _};
+    use emath::GuiRounding as _;
 
     let debug = ui.style().debug;
 
@@ -3127,8 +3259,9 @@ fn register_rect(ui: &Ui, rect: Rect) {
 #[cfg(not(debug_assertions))]
 fn register_rect(_ui: &Ui, _rect: Rect) {}
 
-#[test]
-fn ui_impl_send_sync() {
-    fn assert_send_sync<T: Send + Sync>() {}
+// Compile-time check that `Ui` is `Send + Sync` on every target.
+// Deliberately not a `#[test]`: tests never run on wasm, but `cargo check` does.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<Ui>();
-}
+};
