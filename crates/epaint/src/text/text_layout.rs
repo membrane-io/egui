@@ -1337,7 +1337,13 @@ fn add_row_backgrounds(
 
     for glyph in &row.glyphs {
         let format = &job.sections[glyph.section_index as usize].format;
-        let rect = glyph.logical_rect();
+        // The background covers the font, not the row. A `TextFormat::line_height` that is taller
+        // than the font adds its extra height below the font, and the background must not grow
+        // into it.
+        let rect = Rect::from_min_size(
+            glyph.pos - vec2(0.0, glyph.font_ascent),
+            vec2(glyph.advance_width, glyph.font_height),
+        );
 
         if !has_background(format) {
             end_run(run_start.take(), last_rect.right());
