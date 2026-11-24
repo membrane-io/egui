@@ -1,5 +1,4 @@
-use core::mem::size_of;
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 use ahash::HashMap;
 
@@ -124,7 +123,7 @@ impl ImageLoader for SvgLoader {
             .values()
             .flat_map(|bucket| bucket.values())
             .map(|entry| match &entry.result {
-                Ok(image) => image.pixels.len() * size_of::<egui::Color32>(),
+                Ok(image) => size_of_val(image.pixels()),
                 Err(err) => err.len(),
             })
             .sum()

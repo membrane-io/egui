@@ -18,9 +18,9 @@
 use emath::GuiRounding as _;
 
 use crate::{
-    Align, AsIdSalt, Context, CursorIcon, Frame, Id, IdSalt, InnerResponse, LayerId, Layout,
-    Margin, NumExt as _, Order, Rangef, Rect, Response, Role, Sense, Stroke, Ui, UiBuilder, UiKind,
-    UiStackInfo, Vec2, WidgetInfo, lerp,
+    Align, AsIdSalt, Context, CursorIcon, Frame, HighlightState, Id, IdSalt, InnerResponse,
+    LayerId, Layout, Margin, NumExt as _, Order, Rangef, Rect, Response, Role, Sense, Stroke, Ui,
+    UiBuilder, UiKind, UiStackInfo, Vec2, WidgetInfo, lerp,
 };
 
 fn animate_expansion(ctx: &Context, id: Id, is_expanded: bool) -> f32 {
@@ -839,7 +839,10 @@ impl Panel {
                 .layout(Layout::top_down(Align::Min)),
         );
         panel_ui.expand_to_include_rect(shifted_outer_rect);
-        panel_ui.set_clip_rect(visible_outer_rect); // Hides the off-screen part during a slide; also prevents overflow (#4475).
+        // Hides the off-screen part during a slide; also prevents overflow (#4475).
+        // Intersected with the parent's clip rect so a tighter clip (for instance, from window
+        // collapse) isn't overridden.
+        panel_ui.shrink_clip_rect(visible_outer_rect);
 
         let axis = side.axis();
         let panel_axis_min =
@@ -882,7 +885,7 @@ impl Panel {
 
         parent_ui.expand_to_include_rect(visible_outer_rect);
 
-        let (resize_hover, is_resizing) = if resizable {
+        let resize_state = if resizable {
             // Now we do the actual resize interaction, on top of all the contents,
             // otherwise its input could be eaten by the contents, e.g. a
             // `ScrollArea` on either side of the panel boundary.
@@ -892,12 +895,12 @@ impl Panel {
                 is_expanded_now,
                 parent_ui,
             );
-            (resize_response.hovered(), resize_response.dragged())
+            HighlightState::from(&resize_response)
         } else {
-            (false, false)
+            HighlightState::Idle
         };
 
-        if resize_hover || is_resizing {
+        if resize_state != HighlightState::Idle {
             parent_ui.set_cursor_icon(self.cursor_icon(outer_size));
         }
 
@@ -925,16 +928,14 @@ impl Panel {
         // loses sight of the edge they are dragging. The dim idle separator does
         // get hidden once the panel is mostly slid off, since there it would just
         // be a stray dash hovering near the parent edge.
-        let stroke = if is_resizing {
-            parent_ui.style().visuals.widgets.active.fg_stroke // highly visible
-        } else if resize_hover {
-            parent_ui.style().visuals.widgets.hovered.fg_stroke // highly visible
-        } else if show_separator_line && 0.01 < self.slide_fraction {
+        let idle_stroke = if show_separator_line && 0.01 < self.slide_fraction {
             // TODO(emilk): distinguish resizable from non-resizable
             parent_ui.style().visuals.widgets.noninteractive.bg_stroke // dim
         } else {
             Stroke::NONE
         };
+        let stroke =
+            parent_ui.resize_line_stroke(self.resize_id(parent_ui), resize_state, idle_stroke);
         if 0.0 < stroke.width {
             // Nudged inward, to keep the line inside the panel's own (shifted)
             // rect: `parent_ui`'s painter sits below the panels that come after
@@ -1077,13 +1078,8 @@ impl Panel {
 
         // Invisible until hovered, so the handle doesn't read as a stray line at
         // the edge of the screen.
-        let stroke = if response.dragged() {
-            ui.style().visuals.widgets.active.fg_stroke
-        } else if response.hovered() {
-            ui.style().visuals.widgets.hovered.fg_stroke
-        } else {
-            Stroke::NONE
-        };
+        let stroke =
+            ui.resize_line_stroke(resize_id, HighlightState::from(&response), Stroke::NONE);
         if 0.0 < stroke.width {
             // The collapsed panel occupies no space of its own, so the line has to
             // go _inside_ the area the following panels use — which means painting
@@ -1401,7 +1397,10 @@ impl CentralPanel {
                 .max_rect(outer_rect)
                 .layout(Layout::top_down(Align::Min)),
         );
-        panel_ui.set_clip_rect(outer_rect); // If we overflow, don't do so visibly (#4475)
+        // If we overflow, don't do so visibly (#4475)
+        // Intersected with the parent's clip rect so a tighter clip (for instance, from window
+        // collapse) isn't overridden.
+        panel_ui.shrink_clip_rect(outer_rect);
 
         let frame = frame.unwrap_or_else(|| Frame::central_panel(ui.style()));
         let response = frame.show(&mut panel_ui, |ui| {

@@ -3,8 +3,8 @@ use core::ops::Range;
 use emath::RectAlign;
 
 use crate::{
-    Atom, Atoms, Button, Event, EventFilter, Id, InputState, IntoAtoms, Key, Popup, PopupKind,
-    ScrollArea, TextEdit, Ui, WidgetText,
+    Atom, Atoms, Button, Event, EventFilter, Id, InputState, IntoAtoms, Key, LayerId, Popup,
+    PopupKind, ScrollArea, SurrenderFocusOn, TextEdit, Ui, WidgetText,
     class::{ClassName, HasClasses as _},
     text::{CCursor, CCursorRange, CharIndex},
     vec2,
@@ -97,7 +97,7 @@ struct CompletionState {
     open: bool,
 
     /// The word for which the user dismissed the popup with Escape.
-    /// The popup stays hidden until the word changes.
+    /// The popup stays hidden until the word changes or the [`TextEdit`] is focused again.
     dismissed_word: Option<String>,
 }
 
@@ -134,7 +134,7 @@ impl PopupKeys {
 ///
 /// Shows a list of suggestions for the word under the cursor.
 /// Use the arrow keys to select one, and Enter or Tab to accept it.
-/// Escape closes the popup until the word changes.
+/// Escape closes the popup until the word changes or the [`TextEdit`] is focused again.
 /// Clicking a suggestion also accepts it.
 ///
 /// Keyboard focus stays in the [`TextEdit`] the whole time.
@@ -276,7 +276,28 @@ impl<'a> CompletionPopup<'a> {
             escape: event_filter.escape || state.open,
             ..event_filter
         });
+
+        // Clicking on the popup shouldn't remove the focus from the textedit,
+        // so we disable surrendering while hovering the popup
+        let popup_id = id.with("completion_popup");
+        let popup_layer = LayerId::new(PopupKind::Popup.order(), popup_id);
+        let pointer_on_popup = state.open
+            && ui
+                .ctx()
+                .pointer_interact_pos()
+                .and_then(|pos| ui.ctx().layer_id_at(pos))
+                == Some(popup_layer);
+        let surrender_focus_on = ui
+            .ctx()
+            .options(|options| options.input_options.surrender_focus_on);
+        if pointer_on_popup {
+            ui.ctx().options_mut(|options| {
+                options.input_options.surrender_focus_on = SurrenderFocusOn::Never;
+            });
+        }
         let (output, text) = text_edit.show_returning_text(ui);
+        ui.ctx()
+            .options_mut(|options| options.input_options.surrender_focus_on = surrender_focus_on);
         let response = output.response.response.clone();
 
         let cursor = output.cursor_range.map_or_else(
@@ -286,6 +307,11 @@ impl<'a> CompletionPopup<'a> {
         let word_range = word_range_before_cursor(text.as_str(), cursor, &*is_word_boundary);
         let word = text.char_range(word_range.clone()).to_owned();
 
+        // Escape only hides the popup for the word it was pressed on,
+        // and only until the `TextEdit` is focused again:
+        if response.gained_focus() || state.dismissed_word.as_deref() != Some(word.as_str()) {
+            state.dismissed_word = None;
+        }
         if keys.dismiss {
             state.dismissed_word = Some(word.clone());
         }
@@ -315,7 +341,7 @@ impl<'a> CompletionPopup<'a> {
         let is_open = response.has_focus() && !suggestions.is_empty() && accepted_index.is_none();
 
         let clicked = Popup::from_response(&response)
-            .id(id.with("completion_popup"))
+            .id(popup_id)
             .kind(PopupKind::Popup)
             .open(is_open)
             .align(align)
@@ -352,8 +378,6 @@ impl<'a> CompletionPopup<'a> {
 
         if clicked.is_some() {
             accepted_index = clicked;
-            // Clicking the popup took focus from the text field, so give it back:
-            ui.memory_mut(|mem| mem.request_focus(id));
         }
 
         let accepted = accepted_index

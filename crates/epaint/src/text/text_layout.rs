@@ -1,25 +1,26 @@
 #![expect(clippy::unwrap_used)] // TODO(emilk): remove unwraps
 
+use alloc::sync::Arc;
 use core::{iter, ops::Range};
-use std::sync::Arc;
 
 use emath::{Align, GuiRounding as _, NumExt as _, Pos2, Rect, Vec2, pos2, vec2};
 
 use crate::{
-    Color32, Mesh, Stroke, Vertex,
+    Color32, CornerRadius, MarginF32, Mesh, RoundedRect, Stroke, Vertex,
     stroke::PathStroke,
+    tessellator::Path,
     text::{
         ByteIndex, ByteRange, FontPriority,
         face_store::FontFaceKey,
         fonts::FontsImpl,
         styled_metrics::StyledMetrics,
-        unicode::{is_cjk, is_cjk_break_allowed, is_combining_mark},
+        unicode::{is_breaking_space, is_cjk, is_cjk_break_allowed, is_combining_mark},
     },
 };
 
 use super::{
     ByteRangeExt as _, Galley, Glyph, LayoutJob, LayoutSection, PlacedRow, Row, RowVisuals,
-    VariationCoords,
+    TextFormat, VariationCoords,
     family::FamilyKey,
     font_face::{FontFace, GlyphInfo, ShapedGlyph},
     glyph_atlas::{GlyphAllocation, OutlineGlyph, RasterGlyphAllocation},
@@ -71,10 +72,18 @@ struct Paragraph {
     /// In case of an empty paragraph ("\n"), use this as height.
     pub empty_paragraph_height: f32,
 
-    /// Indentation of the paragraph. This is only relevant if the paragraph has line breaks (i.e.
-    /// not enough horizontal space). If the first line also needs to be indented (usually the
-    /// case), add whitespace or leading space before it.
+    /// MEMBRANE: indentation of the paragraph, from [`super::LeadingSpace::Indent`]. This is only
+    /// relevant if the paragraph has line breaks (i.e. not enough horizontal space). If the first
+    /// line also needs to be indented (usually the case), add whitespace or leading space before it.
+    ///
+    /// This moves the glyphs of each wrapped row inside the row. It adds to
+    /// [`Self::wrap_indent`], which moves the wrapped row itself.
     pub indentation: f32,
+
+    /// Where the rows that the paragraph wraps onto start, in points.
+    ///
+    /// See [`LayoutSection::wrap_indent`].
+    pub wrap_indent: f32,
 }
 
 impl Paragraph {
@@ -85,6 +94,7 @@ impl Paragraph {
             glyphs: vec![],
             empty_paragraph_height: 0.0,
             indentation: 0.0,
+            wrap_indent: 0.0,
         }
     }
 }
@@ -119,9 +129,9 @@ pub(crate) fn layout(fonts: &mut FontsImpl, pixels_per_point: f32, job: Arc<Layo
     {
         let mut shape_buffer = fonts.take_shape_buffer();
         for (section_index, section) in job.sections.iter().enumerate() {
-            shape_buffer = layout_section(
+            layout_section(
                 fonts,
-                shape_buffer,
+                &mut shape_buffer,
                 pixels_per_point,
                 &job,
                 section_index as u32,
@@ -226,7 +236,7 @@ struct TextRun {
     raster: Option<RasterGlyphAllocation>,
 }
 
-/// Emit shaped glyphs from a [`harfrust::GlyphBuffer`] into a [`Paragraph`].
+/// Emit shaped glyphs from a [`harfrust::Buffer`] into a [`Paragraph`].
 ///
 /// When a cluster maps multiple characters to fewer glyphs (e.g. flag emojis,
 /// ligatures), zero-width "continuation" glyphs are emitted for the extra
@@ -236,7 +246,7 @@ fn layout_shaped_run(
     fonts: &mut FontsImpl,
     run: &TextRun,
     run_text: &str,
-    glyph_buffer: &harfrust::GlyphBuffer,
+    glyph_buffer: &harfrust::Buffer,
     face_metrics: &StyledMetrics,
     ctx: &mut ShapingContext,
     paragraph: &mut Paragraph,
@@ -518,18 +528,18 @@ fn emit_continuation_glyphs(
 }
 
 // Ignores the Y coordinate.
-#[must_use]
 fn layout_section(
     fonts: &mut FontsImpl,
-    mut shape_buffer: harfrust::UnicodeBuffer,
+    shape_buffer: &mut harfrust::Buffer,
     pixels_per_point: f32,
     job: &LayoutJob,
     section_index: u32,
     section: &LayoutSection,
     out_paragraphs: &mut Vec<Paragraph>,
-) -> harfrust::UnicodeBuffer {
+) {
     let LayoutSection {
         leading_space,
+        wrap_indent,
         byte_range,
         format,
     } = section;
@@ -546,6 +556,7 @@ fn layout_section(
     let mut paragraph = out_paragraphs.last_mut().unwrap();
     if paragraph.glyphs.is_empty() {
         paragraph.empty_paragraph_height = line_height;
+        paragraph.wrap_indent = *wrap_indent;
     }
     match leading_space {
         super::LeadingSpace::FirstRow(value) => {
@@ -555,6 +566,7 @@ fn layout_section(
             paragraph.indentation = *value;
         }
     }
+    paragraph.cursor_x_px += format.background_margin.left as f32 * pixels_per_point;
 
     let section_text = &job.text[byte_range.as_usize()];
     let mut ctx = ShapingContext {
@@ -575,6 +587,7 @@ fn layout_section(
         if 0 < seg_idx {
             paragraph = out_paragraphs.push_mut(Paragraph::from_section_index(section_index));
             paragraph.empty_paragraph_height = line_height;
+            paragraph.wrap_indent = *wrap_indent;
             ctx.is_first_glyph_in_section = true;
         }
 
@@ -611,23 +624,23 @@ fn layout_section(
                 flags |= harfrust::BufferFlags::END_OF_TEXT;
             }
 
-            let glyph_buffer = shape_text(font_face, run_text, &format.coords, shape_buffer, flags);
+            shape_text(font_face, run_text, &format.coords, shape_buffer, flags);
 
             layout_shaped_run(
                 fonts,
                 run,
                 run_text,
-                &glyph_buffer,
+                shape_buffer,
                 &face_metrics,
                 &mut ctx,
                 paragraph,
             );
 
-            shape_buffer = glyph_buffer.clear();
+            shape_buffer.clear();
         }
     }
 
-    shape_buffer
+    paragraph.cursor_x_px += format.background_margin.right as f32 * pixels_per_point;
 }
 
 /// Iterator that either splits on `'\n'` or yields the whole string once.
@@ -763,8 +776,21 @@ fn line_break(
     let mut first_row_indentation = paragraph.glyphs[0].pos.x;
     let mut row_start_x = paragraph.indentation;
     let mut row_start_idx = 0;
+
     // Rows already placed by previous paragraphs; this paragraph's first row is the one at this index.
-    let rows_before_paragraph = out_rows.len();
+    //
+    // The first row of the paragraph is not indented, the rows it wraps onto are.
+    // MEMBRANE: two indents apply to a wrapped row, and they add up. `paragraph.wrap_indent`
+    // (upstream) moves the row with `PlacedRow::pos`. `paragraph.indentation` (the fork's
+    // `LeadingSpace::Indent`) moves the glyphs inside the row.
+    let first_out_row = out_rows.len();
+    let row_indent = |out_rows: &Vec<PlacedRow>| {
+        if first_out_row < out_rows.len() {
+            paragraph.wrap_indent
+        } else {
+            0.0
+        }
+    };
 
     for i in 0..paragraph.glyphs.len() {
         if job.wrap.max_rows <= out_rows.len() {
@@ -772,7 +798,8 @@ fn line_break(
             break;
         }
 
-        let potential_row_width = paragraph.glyphs[i].max_x() - row_start_x + paragraph.indentation;
+        let potential_row_width = row_indent(out_rows) + paragraph.glyphs[i].max_x() - row_start_x
+            + paragraph.indentation;
 
         if wrap_width < potential_row_width {
             // Row break:
@@ -798,7 +825,7 @@ fn line_break(
             {
                 // The paragraph's first row was already positioned when creating the Paragraph;
                 // only the wrapped rows that follow have to be moved to the indentation.
-                let x_offset = if out_rows.len() == rows_before_paragraph {
+                let x_offset = if out_rows.len() == first_out_row {
                     0.0
                 } else {
                     paragraph.indentation - row_start_x
@@ -816,7 +843,7 @@ fn line_break(
                 let paragraph_max_x = glyphs.last().unwrap().max_x();
 
                 out_rows.push(PlacedRow {
-                    pos: pos2(0.0, f32::NAN),
+                    pos: pos2(row_indent(out_rows), f32::NAN),
                     row: Arc::new(Row {
                         section_index_at_start,
                         glyphs,
@@ -848,7 +875,7 @@ fn line_break(
         } else {
             // The paragraph's first row was already positioned when creating the Paragraph;
             // only the wrapped rows that follow have to be moved to the indentation.
-            let x_offset = if out_rows.len() == rows_before_paragraph {
+            let x_offset = if out_rows.len() == first_out_row {
                 0.0
             } else {
                 paragraph.indentation - row_start_x
@@ -868,7 +895,7 @@ fn line_break(
             let paragraph_max_x = glyphs.last().unwrap().max_x();
 
             out_rows.push(PlacedRow {
-                pos: pos2(paragraph_min_x, 0.0),
+                pos: pos2(row_indent(out_rows) + paragraph_min_x, 0.0),
                 row: Arc::new(Row {
                     section_index_at_start,
                     glyphs,
@@ -1073,7 +1100,7 @@ fn halign_and_justify_row(
 
     let (target_min_x, target_max_x) = match halign {
         Align::LEFT => (0.0, target_width),
-        Align::Center => (-target_width / 2.0, target_width / 2.0),
+        Align::Center => (-target_width * 0.5, target_width * 0.5),
         Align::RIGHT => (-target_width, 0.0),
     };
 
@@ -1143,14 +1170,17 @@ fn galley_from_rows(
         for glyph in &mut row.glyphs {
             let format = &job.sections[glyph.section_index as usize].format;
 
-            glyph.pos.y = glyph.font_face_ascent
-
-                // Apply valign to the different in height of the entire row, and the height of this `Font`:
+            // `font_ascent` is the ascent of the *primary* face, i.e. this row's
+            // baseline. Every glyph goes on it, whichever fallback face it came from,
+            // so that mixed scripts (latin and CJK, say) share one baseline.
+            glyph.pos.y = glyph.font_ascent
+                // Apply valign to the difference in height of the entire row,
+                // and the line height of this glyph (which is the font height, unless explicitly set):
                 + format.valign.to_factor() * (max_row_height - glyph.line_height)
-
-                // When mixing different `FontImpl` (e.g. latin and emojis),
-                // we always center the difference:
-                + 0.5 * (glyph.font_height - glyph.font_face_height);
+                // If the line height was set explicitly (e.g. taller than the font),
+                // we always center the text within that line height, like CSS does.
+                // When `line_height` is not set, this is zero.
+                + 0.5 * (glyph.line_height - glyph.font_height);
 
             glyph.pos.y = point_scale.round_to_pixel(glyph.pos.y);
         }
@@ -1169,11 +1199,13 @@ fn galley_from_rows(
     let mut num_vertices = 0;
     let mut num_indices = 0;
 
+    let mut scratch = BackgroundScratch::default();
+
     for placed_row in &mut rows {
         rect |= placed_row.rect();
 
         let row = Arc::make_mut(&mut placed_row.row);
-        row.visuals = tessellate_row(point_scale, &job, &format_summary, row);
+        row.visuals = tessellate_row(point_scale, &job, &format_summary, &mut scratch, row);
 
         mesh_bounds |= row.visuals.mesh_bounds.translate(placed_row.pos.to_vec2());
         num_vertices += row.visuals.mesh.vertices.len();
@@ -1221,10 +1253,18 @@ fn format_summary(job: &LayoutJob) -> FormatSummary {
     format_summary
 }
 
+/// Reused between rows, to avoid allocations when painting rounded backgrounds.
+#[derive(Default)]
+struct BackgroundScratch {
+    points: Vec<Pos2>,
+    path: Path,
+}
+
 fn tessellate_row(
     point_scale: PointScale,
     job: &LayoutJob,
     format_summary: &FormatSummary,
+    scratch: &mut BackgroundScratch,
     row: &mut Row,
 ) -> RowVisuals {
     if row.glyphs.is_empty() {
@@ -1237,7 +1277,7 @@ fn tessellate_row(
     mesh.reserve_vertices(row.glyphs.len() * 4);
 
     if format_summary.any_background {
-        add_row_backgrounds(point_scale, job, row, &mut mesh);
+        add_row_backgrounds(point_scale, job, scratch, row, &mut mesh);
     }
 
     let glyph_index_start = mesh.indices.len();
@@ -1275,70 +1315,90 @@ fn tessellate_row(
 
 /// Create background for glyphs that have them.
 /// Creates as few rectangular regions as possible.
-fn add_row_backgrounds(point_scale: PointScale, job: &LayoutJob, row: &Row, mesh: &mut Mesh) {
+fn add_row_backgrounds(
+    point_scale: PointScale,
+    job: &LayoutJob,
+    scratch: &mut BackgroundScratch,
+    row: &Row,
+    mesh: &mut Mesh,
+) {
     if row.glyphs.is_empty() {
         return;
     }
 
-    let mut end_run = |start: Option<(Color32, Rect, Vec2, u8, Stroke)>, stop_x: f32| {
-        if let Some((color, start_rect, expand, corner_radius, stroke)) = start {
+    let mut end_run = |start: Option<(&TextFormat, Rect)>, stop_x: f32| {
+        if let Some((format, start_rect)) = start {
             let rect = Rect::from_min_max(start_rect.left_top(), pos2(stop_x, start_rect.bottom()));
-            let rect = rect.expand2(expand);
-            let rect = rect.round_to_pixels(point_scale.pixels_per_point());
+            // MEMBRANE: the upstream `background_margin` applies first, then the fork's
+            // `expand_bg: Vec2` expands the result (x horizontally, y vertically).
+            let rect = (rect + MarginF32::from(format.background_margin))
+                .expand2(format.expand_bg)
+                .round_to_pixels(point_scale.pixels_per_point());
+            let mut fill = |rect: Rect, inset: u8, color: Color32| {
+                // MEMBRANE: two corner radii exist. A non-zero upstream `background_corner_radius`
+                // wins, and the background is a feathered path as upstream paints it. Otherwise the
+                // fork's `bg_corner_radius` applies, and the mesh gets the fork's rounded rectangle.
+                if format.background_corner_radius == CornerRadius::ZERO {
+                    mesh.add_colored_rect_with_corners(
+                        rect,
+                        format.bg_corner_radius.saturating_sub(inset),
+                        color,
+                    );
+                } else {
+                    let BackgroundScratch { points, path } = &mut *scratch;
+                    let feathering = 1.0 / point_scale.pixels_per_point();
+                    crate::tessellator::path::rounded_rectangle(
+                        points,
+                        RoundedRect::new(rect, format.background_corner_radius - inset),
+                    );
+                    path.clear();
+                    path.add_line_loop(points);
+                    path.fill(feathering, color, mesh);
+                }
+            };
+            let stroke = format.bg_stroke;
             if stroke.is_empty() {
-                mesh.add_colored_rect_with_corners(rect, corner_radius, color);
+                fill(rect, 0, format.background);
                 return;
             }
             // A `Mesh` holds triangles and cannot stroke an outline, so the border is the
             // background rectangle in the stroke colour with the fill inset inside it. That keeps
             // the corners rounded, which four separate edge rectangles would not.
             let width = point_scale.round_to_pixel(stroke.width);
-            mesh.add_colored_rect_with_corners(rect, corner_radius, stroke.color);
+            fill(rect, 0, stroke.color);
             let inner = rect.shrink(width);
             if inner.is_positive() {
-                let inner_radius = corner_radius.saturating_sub(width as u8);
-                mesh.add_colored_rect_with_corners(inner, inner_radius, color);
+                fill(inner, width as u8, format.background);
             }
         }
     };
 
-    let mut run_start = None;
+    let mut run_start: Option<(&TextFormat, Rect)> = None;
     let mut last_rect = Rect::NAN;
 
     for glyph in &row.glyphs {
         let format = &job.sections[glyph.section_index as usize].format;
-        let color = format.background;
         let rect = glyph.background_rect();
 
-        if color == Color32::TRANSPARENT {
+        if format.background == Color32::TRANSPARENT {
             end_run(run_start.take(), last_rect.right());
-        } else if let Some((existing_color, start, expand, corner_radius, stroke)) = run_start {
-            if existing_color == color
-                && start.top() == rect.top()
-                && start.bottom() == rect.bottom()
-                && format.expand_bg == expand
-                && format.bg_corner_radius == corner_radius
-                && format.bg_stroke == stroke
+        } else if let Some((start_format, start_rect)) = run_start {
+            if start_format.background == format.background
+                && start_rect.top() == rect.top()
+                && start_rect.bottom() == rect.bottom()
+                && start_format.expand_bg == format.expand_bg
+                && start_format.background_margin == format.background_margin
+                && start_format.background_corner_radius == format.background_corner_radius
+                && start_format.bg_corner_radius == format.bg_corner_radius
+                && start_format.bg_stroke == format.bg_stroke
             {
                 // continue the same background rectangle
             } else {
                 end_run(run_start.take(), last_rect.right());
-                run_start = Some((
-                    color,
-                    rect,
-                    format.expand_bg,
-                    format.bg_corner_radius,
-                    format.bg_stroke,
-                ));
+                run_start = Some((format, rect));
             }
         } else {
-            run_start = Some((
-                color,
-                rect,
-                format.expand_bg,
-                format.bg_corner_radius,
-                format.bg_stroke,
-            ));
+            run_start = Some((format, rect));
         }
 
         last_rect = rect;
@@ -1479,8 +1539,7 @@ struct RowBreakCandidates {
 impl RowBreakCandidates {
     fn add(&mut self, index: usize, glyphs: &[Glyph]) {
         let chr = glyphs[0].chr;
-        const NON_BREAKING_SPACE: char = '\u{A0}';
-        if chr.is_whitespace() && chr != NON_BREAKING_SPACE {
+        if is_breaking_space(chr) {
             self.space = Some(index);
         } else if is_cjk(chr) && (glyphs.len() == 1 || is_cjk_break_allowed(glyphs[1].chr)) {
             self.cjk = Some(index);
@@ -1631,53 +1690,45 @@ fn segment_into_runs(
     }
 }
 
-/// Shape a text run and return the raw [`harfrust::GlyphBuffer`].
+/// Shape a text run into `buffer`, replacing its (empty) contents with positioned glyphs.
 ///
 /// The caller should iterate `glyph_infos()` / `glyph_positions()` (both
 /// `Copy` slices) and convert font units to pixels using `metrics.px_scale_factor`.
-/// After iteration, recycle the buffer via `glyph_buffer.clear()`.
+/// After iteration, recycle the buffer via `buffer.clear()`.
 fn shape_text(
     font_face: &FontFace,
     text: &str,
     coords: &VariationCoords,
-    mut buffer: harfrust::UnicodeBuffer,
+    buffer: &mut harfrust::Buffer,
     flags: harfrust::BufferFlags,
-) -> harfrust::GlyphBuffer {
-    let font_ref = font_face.skrifa_font_ref();
+) {
+    let base_font = font_face.shaper_font();
     let tweak = font_face.tweak();
 
-    // Build shaper with variable font instance if variation coordinates are set.
-    let variations: Vec<harfrust::Variation> = iter::chain(tweak.coords.as_ref(), coords.as_ref())
-        .map(|&(tag, value)| harfrust::Variation { tag, value })
-        .collect();
-
-    let instance = if variations.is_empty() {
-        None
-    } else {
-        Some(harfrust::ShaperInstance::from_variations(
-            font_ref, variations,
-        ))
-    };
-
-    let shaper = font_face
-        .shaper_data()
-        .shaper(font_ref)
-        .instance(instance.as_ref())
-        .build();
+    // Use a variable font instance if variation coordinates are set.
+    let variations = iter::chain(tweak.coords.as_ref(), coords.as_ref());
+    let instance = variations
+        .clone()
+        .next()
+        .is_some()
+        .then(|| base_font.instance_builder().variations(variations).build());
+    let font = instance.as_ref().unwrap_or(base_font);
 
     buffer.set_flags(flags);
     buffer.push_str(text);
     buffer.guess_segment_properties();
 
-    shaper.shape(buffer, harfrust::ShapeOptions::new())
+    let shaper_font = harfrust::ShaperFont::new(font);
+    if let Err(err) = harfrust::shape(&shaper_font, buffer, harfrust::ShapeOptions::new()) {
+        debug_assert!(false, "harfrust failed to shape {text:?}: {err}");
+        buffer.clear();
+    }
 }
 
 // ----------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
-    use core::iter;
-    use std::sync::Arc;
 
     use super::{super::*, *};
     use crate::{ColorImage, text::cursor::CCursor};
@@ -1694,6 +1745,127 @@ mod tests {
             FontId::proportional(14.0),
             Color32::WHITE,
         )
+    }
+
+    /// Lay out `paragraphs`, each `(text, wrap_indent)` its own section, wrapped at `wrap_width`.
+    fn layout_with_wrap_indents(paragraphs: &[(&str, f32)], wrap_width: f32) -> Arc<Galley> {
+        let mut fonts = Fonts::new(TextOptions::default(), FontDefinitions::default());
+        let mut job = LayoutJob::default();
+        for &(text, wrap_indent) in paragraphs {
+            let start = job.text.len();
+            job.text += text;
+            job.sections.push(LayoutSection {
+                leading_space: 0.0.into(),
+                wrap_indent,
+                byte_range: ByteIndex(start)..ByteIndex(job.text.len()),
+                format: TextFormat::simple(FontId::proportional(14.0), Color32::WHITE),
+            });
+        }
+        job.wrap.max_width = wrap_width;
+        fonts.with_pixels_per_point(1.0).layout_job(job)
+    }
+
+    #[test]
+    fn wrap_indent_moves_only_the_wrapped_rows() {
+        let wrap_width = 100.0;
+        let galley =
+            layout_with_wrap_indents(&[("- one two three four five six seven", 12.0)], wrap_width);
+
+        assert!(3 <= galley.rows.len(), "{} rows", galley.rows.len());
+        assert_eq!(galley.rows[0].pos.x, 0.0);
+        for row in &galley.rows[1..] {
+            assert_eq!(row.pos.x, 12.0);
+            assert!(row.rect().max.x <= wrap_width, "{:?} overflows", row.rect());
+        }
+    }
+
+    #[test]
+    fn wrap_indent_comes_from_the_section_that_starts_the_paragraph() {
+        let galley = layout_with_wrap_indents(
+            &[
+                ("- one two three four five six seven\n", 12.0),
+                ("- one two three four five six seven", 24.0),
+            ],
+            100.0,
+        );
+
+        let second_paragraph = galley
+            .rows
+            .iter()
+            .position(|row| row.ends_with_newline)
+            .unwrap()
+            + 1;
+        assert_eq!(galley.rows[second_paragraph].pos.x, 0.0);
+        assert_eq!(galley.rows[second_paragraph + 1].pos.x, 24.0);
+    }
+
+    #[test]
+    fn wrap_indent_does_nothing_to_a_row_that_fits() {
+        let galley = layout_with_wrap_indents(&[("- one", 12.0)], 100.0);
+
+        assert_eq!(galley.rows.len(), 1);
+        assert_eq!(galley.rows[0].pos.x, 0.0);
+    }
+
+    /// Chinese closes a clause with full-width marks (，：；？！）), and those must never start a row:
+    /// <https://en.wikipedia.org/wiki/Line_breaking_rules_in_East_Asian_languages>
+    #[test]
+    fn cjk_row_never_starts_with_full_width_closing_punctuation() {
+        let mut fonts = Fonts::new(TextOptions::default(), FontDefinitions::empty())
+            .with_missing_glyph_policy(MissingGlyphPolicy::Tofu);
+        let mut fonts = fonts.with_pixels_per_point(2.0);
+        let font_id = FontId::proportional(14.0);
+        let text = "一二三，四五六：七八九？十一二！三四五）六七八";
+        let one = fonts
+            .layout_no_wrap("一".to_owned(), font_id.clone(), Color32::WHITE)
+            .size()
+            .x;
+        // Every width that fits a few glyphs, so some row would end just before each mark.
+        for glyphs in 2..12 {
+            let width = one * glyphs as f32 + 0.5 * one;
+            let galley = fonts.layout(text.to_owned(), font_id.clone(), Color32::WHITE, width);
+            for placed in galley.rows.iter().skip(1) {
+                let first = placed.row.glyphs.first().map(|g| g.chr);
+                assert!(
+                    !matches!(first, Some('，' | '：' | '？' | '！' | '）')),
+                    "a row starts with {first:?} at {glyphs} glyphs wide"
+                );
+            }
+        }
+    }
+
+    /// Glyphs from a fallback face must sit on the baseline of the primary face.
+    ///
+    /// The y position used to come from the ascent of whichever face the glyph was found
+    /// in, plus a term centering that face's box in the row. So as soon as a row mixed
+    /// scripts, its glyphs landed on different baselines, and a face much taller than the
+    /// primary one (a CJK fallback, say) was pushed above the row, clipping its glyphs.
+    #[test]
+    #[cfg(feature = "monochrome_emoji_fonts")] // Needs a fallback face with non-latin metrics
+    fn glyphs_from_different_faces_share_one_baseline() {
+        let mut fonts = Fonts::new(TextOptions::default(), FontDefinitions::default());
+        let font_id = FontId::proportional(40.0);
+        let mut view = fonts.with_pixels_per_point(1.0);
+
+        // The primary face alone decides the baseline, so latin-only text tells us the
+        // y position that every other glyph in the same section has to share:
+        let latin = view.layout_no_wrap("Ag".to_owned(), font_id.clone(), Color32::WHITE);
+        let expected_y = latin.rows[0].row.glyphs[0].pos.y;
+
+        let galley = view.layout_no_wrap("Ag👋".to_owned(), font_id, Color32::WHITE);
+        let glyphs = &galley.rows[0].row.glyphs;
+        // Without this the test would pass trivially if no fallback face was involved:
+        assert!(
+            glyphs.iter().any(|g| g.font_face_ascent != g.font_ascent),
+            "no glyph came from a fallback face with different metrics"
+        );
+        for glyph in glyphs {
+            assert_eq!(
+                glyph.pos.y, expected_y,
+                "{:?} is not on the baseline of the primary face",
+                glyph.chr
+            );
+        }
     }
 
     /// With no font at all we still need one glyph per character and rows with height,
@@ -1919,7 +2091,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "default_fonts")]
     /// Each test rasterizer needs its own [`GlyphRasterizer::key`], or they would replace each other.
     fn unique_test_key() -> String {
         static COUNTER: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
@@ -2229,6 +2400,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "default_fonts")]
     // No bundled font has CJK glyphs, so the line breaks depend on
     // the width of the `.notdef` glyph of the primary font.
     fn test_cjk() {
@@ -2247,6 +2419,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "default_fonts")]
     // No bundled font has CJK glyphs, so the line breaks depend on
     // the width of the `.notdef` glyph of the primary font.
     fn test_pre_cjk() {
@@ -2305,6 +2478,30 @@ mod tests {
         let galley = layout(&mut fonts, pixels_per_point, layout_job.into());
         assert!(galley.rows[1].text().starts_with("bbbb"));
         assert_eq!(galley.rows[1].glyphs[0].pos.x, 0.0);
+    }
+
+    #[test]
+    #[cfg(feature = "default_fonts")]
+    fn test_no_break_spaces() {
+        let row_texts = |text: &str| {
+            let mut fonts = test_fonts();
+            let mut layout_job = LayoutJob::single_section(text.into(), TextFormat::default());
+            layout_job.wrap.max_width = 90.0;
+            let galley = layout(&mut fonts, 1.0, layout_job.into());
+            galley.rows.iter().map(|row| row.text()).collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            row_texts("Sum: 123\u{2009}456\u{2009}789"),
+            vec!["Sum: 123\u{2009}456\u{2009}", "789"]
+        );
+        for no_break_space in ['\u{00A0}', '\u{2007}', '\u{202F}'] {
+            let number = format!("123{no_break_space}456{no_break_space}789");
+            assert_eq!(
+                row_texts(&format!("Sum: {number}")),
+                vec!["Sum: ".to_owned(), number]
+            );
+        }
     }
 
     #[test]
@@ -2403,6 +2600,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "default_fonts")]
     fn test_end_with_newline() {
         let pixels_per_point = 1.0;
         let mut fonts = test_fonts();
@@ -2437,6 +2635,85 @@ mod tests {
             galley.intrinsic_size().round(),
             Vec2::new(17.0, font_height.round() * 2.0),
             "Unexpected intrinsic size"
+        );
+    }
+
+    #[test]
+    fn test_valign_with_custom_line_height() {
+        let pixels_per_point = 1.0;
+        let mut fonts = test_fonts();
+
+        let font_id = FontId::default();
+        let family = fonts.family_key(&font_id.family);
+        let font_height = fonts
+            .family_metrics(
+                family,
+                pixels_per_point,
+                font_id.size,
+                &VariationCoords::default(),
+            )
+            .row_height;
+        let extra_height = 20.0;
+        let line_height = (font_height + extra_height).round();
+        let free_space = line_height - font_height;
+
+        // Row height, and y-position of the last glyph (in the last section):
+        let mut glyph_y = |sections: &[(Option<f32>, Align)]| {
+            let mut job = LayoutJob::default();
+            for &(line_height, valign) in sections {
+                job.append(
+                    "Hello",
+                    0.0,
+                    TextFormat {
+                        font_id: font_id.clone(),
+                        line_height,
+                        valign,
+                        ..Default::default()
+                    },
+                );
+            }
+            let galley = layout(&mut fonts, pixels_per_point, job.into());
+            assert_eq!(galley.rows.len(), 1);
+            let glyph = galley.rows[0].row.glyphs.last().unwrap();
+            (galley.size().y, glyph.pos.y)
+        };
+
+        let (default_height, baseline_y) = glyph_y(&[(None, Align::default())]);
+        assert_eq!(default_height, font_height.round());
+
+        // A custom line height always centers the text, regardless of `valign`
+        // (including the default `valign`):
+        for valign in [
+            TextFormat::default().valign,
+            Align::TOP,
+            Align::Center,
+            Align::BOTTOM,
+        ] {
+            let (height, y) = glyph_y(&[(Some(line_height), valign)]);
+            assert_eq!(
+                height, line_height,
+                "Row should have the custom line height"
+            );
+            assert!(
+                (y - baseline_y - 0.5 * free_space).abs() <= 1.0,
+                "{valign:?}: text should be centered in the line: baseline_y={baseline_y}, y={y}, free_space={free_space}"
+            );
+        }
+
+        // `valign` still governs how a section without a custom line height
+        // is placed within a taller row:
+        let tall = (Some(line_height), Align::Center);
+        let (_, top) = glyph_y(&[tall, (None, Align::TOP)]);
+        let (_, center) = glyph_y(&[tall, (None, Align::Center)]);
+        let (_, bottom) = glyph_y(&[tall, (None, Align::BOTTOM)]);
+        assert!((top - baseline_y).abs() <= 1.0, "top={top}");
+        assert!(
+            (center - top - 0.5 * free_space).abs() <= 1.0,
+            "top={top}, center={center}, free_space={free_space}"
+        );
+        assert!(
+            (bottom - top - free_space).abs() <= 1.0,
+            "top={top}, bottom={bottom}, free_space={free_space}"
         );
     }
 
@@ -2559,6 +2836,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "default_fonts")]
     fn test_gpos_kerning() {
         // GPOS kerning: pairs like "AV", "VA", "AT" should be tighter than
         // the sum of individual character widths. Without text shaping, egui
@@ -2702,6 +2980,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "default_fonts")]
     fn measure_text(
         fonts: &mut FontsImpl,
         text: &str,

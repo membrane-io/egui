@@ -2,10 +2,10 @@
 //!
 //! Used by [`crate::DragValue`], [`crate::Slider`], and [`crate::RangeSlider`].
 
+use alloc::sync::Arc;
 use core::ops::RangeInclusive;
-use std::sync::Arc;
 
-use crate::{Atoms, IntoAtoms, MINUS_CHAR_STR, emath};
+use crate::{Atoms, IntoAtoms, MINUS_CHAR_STR};
 
 /// Formats a value for display, given the range of decimals it may show.
 pub type NumFormatter<'a> = Arc<dyn 'a + Fn(f64, RangeInclusive<usize>) -> String>;

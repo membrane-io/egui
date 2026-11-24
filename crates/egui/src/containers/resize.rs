@@ -344,7 +344,8 @@ impl Resize {
             ui.ctx().request_discard("Resize sizing pass");
             Rect::from_min_size(position, Vec2::new(self.min_size.x, state.desired_size.y))
         } else if let Some(mut user_requested_rect) = user_requested_rect {
-            user_requested_rect.set_size_with_anchor(state.desired_size, self.drag_corner.flipped());
+            user_requested_rect
+                .set_size_with_anchor(state.desired_size, self.drag_corner.flipped());
             user_requested_rect
         } else {
             Rect::from_min_size(position, state.desired_size)

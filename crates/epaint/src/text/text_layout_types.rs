@@ -1,12 +1,12 @@
+use alloc::sync::Arc;
 use core::{ops::Range, str::FromStr as _};
-use std::sync::Arc;
 
 use super::{
     cursor::{CCursor, LayoutCursor},
     glyph_atlas::UvRect,
     index::{ByteIndex, ByteRange, ByteRangeExt as _, CharIndex},
 };
-use crate::{Color32, FontId, Mesh, Stroke, text::FontsView};
+use crate::{Color32, CornerRadius, FontId, Margin, Mesh, Stroke, text::FontsView};
 use emath::{Align, GuiRounding as _, NumExt as _, OrderedFloat, Pos2, Rect, Vec2, pos2, vec2};
 pub use font_types::Tag;
 use smallvec::SmallVec;
@@ -127,6 +127,7 @@ impl LayoutJob {
         Self {
             sections: vec![LayoutSection {
                 leading_space: 0.0.into(),
+                wrap_indent: 0.0,
                 byte_range: ByteRange::full(&text),
                 format: TextFormat::simple(font_id, color),
             }],
@@ -146,6 +147,7 @@ impl LayoutJob {
         Self {
             sections: vec![LayoutSection {
                 leading_space: 0.0.into(),
+                wrap_indent: 0.0,
                 byte_range: ByteRange::full(&text),
                 format,
             }],
@@ -161,6 +163,7 @@ impl LayoutJob {
         Self {
             sections: vec![LayoutSection {
                 leading_space: 0.0.into(),
+                wrap_indent: 0.0,
                 byte_range: ByteRange::full(&text),
                 format: TextFormat::simple(font_id, color),
             }],
@@ -176,6 +179,7 @@ impl LayoutJob {
         Self {
             sections: vec![LayoutSection {
                 leading_space: 0.0.into(),
+                wrap_indent: 0.0,
                 byte_range: ByteRange::full(&text),
                 format,
             }],
@@ -216,6 +220,7 @@ impl LayoutJob {
 
         self.sections.push(LayoutSection {
             leading_space: leading_space.into(),
+            wrap_indent: 0.0,
             byte_range,
             format,
         });
@@ -238,6 +243,7 @@ impl LayoutJob {
         let byte_range = ByteIndex(start)..ByteIndex(self.text.len());
         self.sections.push(LayoutSection {
             leading_space,
+            wrap_indent: 0.0,
             byte_range,
             format,
         });
@@ -407,17 +413,45 @@ impl From<f32> for LeadingSpace {
 /// This means kerning (and ligatures) are only correct _within_ a single section,
 /// and not across the boundary between two adjacent sections.
 /// For this reason [`LayoutJob::append`] merges consecutive sections when possible.
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct LayoutSection {
     /// Can be used for first row indentation.
     pub leading_space: LeadingSpace,
+
+    /// Where the rows that a paragraph wraps onto start, in points.
+    ///
+    /// Use it for a hanging indent, e.g. so the wrapped rows of a list item line up
+    /// with the text after its bullet instead of with the bullet.
+    ///
+    /// The value of the section that holds the first character of a paragraph applies
+    /// to that whole paragraph. The first row of a paragraph is never indented by it:
+    /// use [`Self::leading_space`] for that.
+    ///
+    /// Only applies to left-aligned text that is neither justified nor centered.
+    pub wrap_indent: f32,
 
     /// Range into [`LayoutJob::text`].
     pub byte_range: ByteRange,
 
     /// How to format the text in this section (font, color, etc).
     pub format: TextFormat,
+}
+
+impl core::hash::Hash for LayoutSection {
+    #[inline]
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        let Self {
+            leading_space,
+            wrap_indent,
+            byte_range,
+            format,
+        } = self;
+        leading_space.hash(state);
+        OrderedFloat(*wrap_indent).hash(state);
+        byte_range.hash(state);
+        format.hash(state);
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -540,6 +574,10 @@ pub struct TextFormat {
     ///
     /// If `None` (the default), the line height is determined by the font.
     ///
+    /// If the line height differs from the height of the font,
+    /// the text is vertically centered within the line height (like in CSS),
+    /// regardless of [`Self::valign`].
+    ///
     /// For even text it is recommended you round this to an even number of _pixels_.
     pub line_height: Option<f32>,
 
@@ -548,15 +586,42 @@ pub struct TextFormat {
 
     pub background: Color32,
 
-    /// Amount to expand background fill by.
+    /// Amount to expand background fill by: `x` on the left and right, `y` on the top and bottom.
     ///
-    /// Default: 1.0
+    /// This does not affect the layout, so the background may overlap neighboring text.
+    ///
+    /// Default: `Vec2::new(1.0, 1.0)`
     pub expand_bg: Vec2,
+
+    /// Inner margin of the [`Self::background`]: the space between the text and the edges of
+    /// the background. A positive margin makes the background bigger than the text.
+    ///
+    /// The left and right margins take up space in the layout, so the background never
+    /// overlaps neighboring text.
+    /// The top and bottom margins are only visual: they do not affect the layout,
+    /// since that would change the row height.
+    /// Use negative top and bottom margins to keep the backgrounds of adjacent rows apart.
+    ///
+    /// This is applied in addition to [`Self::expand_bg`].
+    ///
+    /// Default: [`Margin::ZERO`]
+    pub background_margin: Margin,
+
+    /// Corner radius of the [`Self::background`].
+    ///
+    /// If this is not [`CornerRadius::ZERO`], it replaces [`Self::bg_corner_radius`].
+    ///
+    /// Default: [`CornerRadius::ZERO`]
+    pub background_corner_radius: CornerRadius,
 
     pub coords: VariationCoords,
 
     /// Corner radius for background rectangles.
-    /// Default: 0.0 (no rounding)
+    ///
+    /// MEMBRANE: this applies only when [`Self::background_corner_radius`] is
+    /// [`CornerRadius::ZERO`].
+    ///
+    /// Default: 0 (no rounding)
     pub bg_corner_radius: u8,
 
     /// Border drawn inside the edge of a background rectangle.
@@ -582,6 +647,13 @@ pub struct TextFormat {
     /// If you use [`Align::Center`], you get text that is centered
     /// around a common center-line, which is nice when mixining emojis
     /// and normal text in e.g. a button.
+    ///
+    /// The alignment is applied to the difference between the height of the row
+    /// and the [`Self::line_height`] of this section.
+    /// Any extra space from an explicit [`Self::line_height`] is always split evenly
+    /// above and below the text.
+    ///
+    /// Default: [`Align::BOTTOM`].
     pub valign: Align,
 }
 
@@ -595,6 +667,8 @@ impl Default for TextFormat {
             color: Color32::GRAY,
             background: Color32::TRANSPARENT,
             expand_bg: Vec2::new(1.0, 1.0),
+            background_margin: Margin::ZERO,
+            background_corner_radius: CornerRadius::ZERO,
             coords: VariationCoords::default(),
             bg_corner_radius: 0,
             bg_stroke: Stroke::NONE,
@@ -616,6 +690,8 @@ impl core::hash::Hash for TextFormat {
             color,
             background,
             expand_bg,
+            background_margin,
+            background_corner_radius,
             coords,
             bg_corner_radius,
             bg_stroke,
@@ -633,6 +709,8 @@ impl core::hash::Hash for TextFormat {
         background.hash(state);
         emath::OrderedFloat(expand_bg.x).hash(state);
         emath::OrderedFloat(expand_bg.y).hash(state);
+        background_margin.hash(state);
+        background_corner_radius.hash(state);
         coords.hash(state);
         bg_corner_radius.hash(state);
         bg_stroke.hash(state);
@@ -675,7 +753,7 @@ pub enum TextWrapMode {
 }
 
 /// Controls the text wrapping and elision of a [`LayoutJob`].
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct TextWrapping {
     /// Wrap text so that no row is wider than this.

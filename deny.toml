@@ -35,11 +35,15 @@ ignore = [
   "RUSTSEC-2025-0141", # https://rustsec.org/advisories/RUSTSEC-2025-0141 - bincode is unmaintained - https://git.sr.ht/~stygianentity/bincode/tree/v3.0/item/README.md
   "RUSTSEC-2026-0192", # ttf-parser is unmaintained. Only brought in via winit/sctk-adwaita (wayland window frame rendering)
   "RUSTSEC-2026-0206", # rustybuzz is unmaintained. Brought in via resvg. TODO(linebender/resvg#922): Remove once the PR lands and is released
+  "RUSTSEC-2026-0370", # zvariant is unmaintained (merged into zbus 6). Brought in via accesskit_unix/atspi
+  "RUSTSEC-2026-0371", # zbus_names is unmaintained (merged into zbus 6). Brought in via accesskit_unix/atspi
+  "RUSTSEC-2026-0372", # zvariant_derive is unmaintained (merged into zbus 6). Brought in via accesskit_unix/atspi
 ]
 
 [bans]
 multiple-versions = "deny" # Use `cargo tree --duplicates` to easily find duplicates
 wildcards = "deny"
+allow-wildcard-paths = true # For the path-only `egui_kittest` dev-dependency of `egui_extras`
 deny = [
   { name = "cmake", reason = "It has hurt me too much" },
   { name = "openssl-sys", reason = "Use rustls" },
@@ -57,18 +61,18 @@ skip = [
   { name = "hashbrown" }, # wgpu's naga depends on 0.16, accesskit depends on 0.15
   { name = "itertools" }, # puffin 0.20 depends on 0.14, criterion 0.8 on 0.13
   { name = "jni-sys" }, # 0.3.1 depends on 0.4
-  { name = "kurbo" }, # resvg 0.45's svgtypes depends on 0.11, peniko (via vello_cpu) on 0.13
   { name = "phf" }, # mime_guess2 -> 0.11, unicode_names2 -> 0.13
-  { name = "png" }, # glifo (vello_cpu's text feature, for bitmap emoji) depends on 0.18, image 0.25 on 0.17
   { name = "phf_generator" }, # same phf split as phf
   { name = "phf_shared" }, # same phf split as phf
   { name = "rand_core" }, # rand ecosystem is migrating 0.8 -> 0.10; phf_generator's rand 0.8 needs rand_core 0.6, getrandom 0.4/chacha20 need rand_core 0.10
   { name = "redox_syscall" }, # old version via winit
-  { name = "roxmltree" }, # fontique (Android backend) depends on 0.21, resvg's usvg on 0.20
+  { name = "roxmltree" }, # usvg 0.50 depends on 0.21, its fontdb's fontconfig-parser on 0.20
   { name = "rustc-hash" }, # Small enough
   { name = "syn" }, # ecosystem is in the process of migrating from 2.x to 3.x; build-time only
   { name = "thiserror" }, # ecosystem is in the process of migrating from 1.x to 2.x
   { name = "thiserror-impl" }, # same as above
+  { name = "tiny-skia" }, # resvg 0.50 depends on 0.12, winit 0.30's sctk-adwaita on 0.11 (Linux Wayland only)
+  { name = "tiny-skia-path" }, # same as tiny-skia
 ]
 skip-tree = [
   # PREFER `skip` (above): `skip-tree` exempts the crate AND its whole transitive subtree from the

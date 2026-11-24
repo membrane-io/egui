@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 use crate::{
     BandShape, BorderRectShape, CircleShape, Color32, ColorMode, CubicBezierShape, EllipseShape,
@@ -140,6 +140,10 @@ pub fn adjust_colors(
 
         Shape::Callback(_) => {
             // Can't tint user callback code
+        }
+
+        Shape::Clear(_) => {
+            // Transparent black has no color to adjust.
         }
     }
 }

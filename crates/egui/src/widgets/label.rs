@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 use crate::{
     Align, Direction, FontSelection, Galley, Pos2, Response, Role, Sense, Stroke, TextWrapMode, Ui,
-    Widget, WidgetInfo, WidgetText, epaint, epaint::text::LeadingSpace, pos2,
+    Widget, WidgetInfo, WidgetText, epaint::text::LeadingSpace, pos2,
     text_selection::LabelSelectionState,
 };
 

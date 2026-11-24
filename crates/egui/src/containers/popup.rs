@@ -206,7 +206,7 @@ impl<'a> Popup<'a> {
             gap: 0.0,
             width: None,
             sizing_pass: false,
-            sense: Sense::click(),
+            sense: Sense::CLICK,
             interactable: true,
             layout: Layout::default(),
             frame: None,
@@ -551,12 +551,15 @@ impl<'a> Popup<'a> {
         // last frame. A convenient way to check this is to see if we have a response for the `Area`
         // from last frame:
         let was_open_last_frame = self.ctx.read_response(id).is_some();
+        let mut just_opened = !was_open_last_frame;
 
         let hover_pos = self.ctx.pointer_hover_pos();
         if let OpenKind::Memory { set } = self.open_kind {
             match set {
                 Some(SetOpenCommand::Bool(open)) => {
                     if open {
+                        // E.g. a context menu reopened by a second secondary click.
+                        just_opened = true;
                         match self.anchor {
                             PopupAnchor::PointerFixed => {
                                 self.ctx.memory_mut(|mem| mem.open_popup_at(id, hover_pos));
@@ -649,7 +652,11 @@ impl<'a> Popup<'a> {
         let mut response = area.show(&ctx, |ui| {
             style.apply(ui.style_mut());
             let frame = frame.unwrap_or_else(|| Frame::popup(ui.style()));
-            frame.show(ui, content).inner
+            let inner = frame.show(ui, content).inner;
+            if kind == PopupKind::Menu {
+                MenuState::handle_keyboard(ui, anchor_widget);
+            }
+            inner
         });
 
         // MEMBRANE: keep the popup above the layer that anchors it.
@@ -662,8 +669,24 @@ impl<'a> Popup<'a> {
             ctx.set_sublayer(layer_id, response.response.layer_id);
         }
 
-        // If the popup was just opened with a click, we don't want to immediately close it again.
-        let close_click = was_open_last_frame && ctx.input(|i| i.pointer.any_click());
+        // Only a click whose press started while the popup was already open may close it.
+        // Otherwise a popup opened on a pointer *press* (e.g. a right-press context menu)
+        // would immediately close again on the following *release*.
+        // This also covers the case where the popup was just opened with a click.
+        let press_started_while_open_id = id.with("press_started_while_open");
+        let (any_pressed, any_click) =
+            ctx.input(|i| (i.pointer.any_pressed(), i.pointer.any_click()));
+        let press_started_while_open = if just_opened {
+            ctx.data_mut(|d| d.remove::<bool>(press_started_while_open_id));
+            false
+        } else if any_pressed {
+            ctx.data_mut(|d| d.insert_temp(press_started_while_open_id, true));
+            true
+        } else {
+            ctx.data(|d| d.get_temp(press_started_while_open_id))
+                .unwrap_or(false)
+        };
+        let close_click = press_started_while_open && any_click;
 
         let closed_by_click = match close_behavior {
             PopupCloseBehavior::CloseOnClick => close_click,
@@ -693,6 +716,7 @@ impl<'a> Popup<'a> {
 
         if should_close {
             response.response.set_close();
+            ctx.data_mut(|d| d.remove::<bool>(press_started_while_open_id));
         }
 
         match open_kind {

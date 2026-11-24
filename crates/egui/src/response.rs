@@ -1,5 +1,5 @@
+use alloc::sync::Arc;
 use core::any::Any;
-use std::sync::Arc;
 
 use crate::{
     Context, CursorIcon, Id, LayerId, PointerButton, Popup, PopupKind, Sense, SetOpenCommand,
@@ -474,6 +474,28 @@ impl Response {
     /// True if this widget has keyboard focus this frame, but didn't last frame.
     pub fn gained_focus(&self) -> bool {
         self.ctx.memory(|mem| mem.gained_focus(self.id))
+    }
+
+    /// How the keyboard focus got to this widget.
+    ///
+    /// Returns `None` if this widget doesn't have the focus.
+    ///
+    /// This is [`crate::FocusDirection::Next`] after Tab and [`crate::FocusDirection::Previous`]
+    /// after Shift-Tab.
+    ///
+    /// It is [`crate::FocusDirection::None`] if the widget got the focus without a direction,
+    /// such as by a click or [`Self::request_focus`].
+    ///
+    /// Use it together with [`Self::gained_focus`] in a widget that has focusable parts of its
+    /// own. It tells you whether to start at the first or the last part.
+    pub fn focused_via(&self) -> Option<crate::FocusDirection> {
+        self.ctx.memory(|mem| {
+            if mem.has_focus(self.id) {
+                mem.focused_via()
+            } else {
+                None
+            }
+        })
     }
 
     /// The widget had keyboard focus and lost it,
