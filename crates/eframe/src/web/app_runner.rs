@@ -487,9 +487,6 @@ impl AppRunner {
             super::set_cursor_icon(input_element, cursor_icon);
         }
 
-        #[cfg(not(web_sys_unstable_apis))]
-        let _ = copied_text;
-
         // MEMBRANE: support native dragging. It's possible that the egui drag starts before the native dragstart event
         // is fired by the DOM element, so we keep the payload here.
         #[cfg(target_arch = "wasm32")]

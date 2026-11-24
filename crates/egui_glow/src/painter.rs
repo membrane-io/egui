@@ -874,12 +874,7 @@ impl Painter {
                 }
                 Primitive::Clear(rect) => {
                     // `glClear` has no rect arg, so we need to use the clip_rect
-                    set_clip_rect(
-                        &self.gl,
-                        screen_size_px,
-                        pixels_per_point,
-                        clip_rect.intersect(*rect),
-                    );
+                    self.set_clip_rect(screen_size_px, pixels_per_point, clip_rect.intersect(*rect));
                     unsafe {
                         self.gl.clear_color(0.0, 0.0, 0.0, 0.0);
                         self.gl.clear(glow::COLOR_BUFFER_BIT);

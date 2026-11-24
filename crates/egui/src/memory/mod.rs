@@ -991,8 +991,6 @@ impl Memory {
     /// `gained_focus` work reliably with the caveat that it will have a frame delay.
     /// See also [`crate::Response::request_focus`].
     ///
-    /// Defer focus until the next pass so an already rendered widget sees `gained_focus`.
-    ///
     /// MEMBRANE: public, so that an app can call it.
     pub fn request_focus_next_frame(&mut self, id: Id) {
         let focus_changed = !self.has_focus(id);
@@ -1322,10 +1320,12 @@ impl Areas {
         self.areas.len()
     }
 
+    /// The state of the area with this id, if the area exists.
     pub fn get(&self, id: Id) -> Option<&area::AreaState> {
         self.areas.get(&id)
     }
 
+    /// Forget the area with this id, and remove its layer from the layer order and the sublayers.
     pub fn remove(&mut self, id: Id) {
         self.areas.remove(&id);
         let idx = self.order.iter().position(|layer| layer.id == id);
@@ -1339,6 +1339,7 @@ impl Areas {
         }
     }
 
+    /// The mutable state of the area with this id, if the area exists.
     pub fn get_mut(&mut self, id: Id) -> Option<&mut area::AreaState> {
         self.areas.get_mut(&id)
     }

@@ -524,7 +524,7 @@ pub use self::{
     layers::{LayerId, Order},
     layout::Layout,
     load::SizeHint,
-    memory::{Areas, FocusDirection, Memory, Options, Theme, ThemePreference},
+    memory::{Areas, Focus, FocusDirection, Memory, Options, Theme, ThemePreference},
     painter::Painter,
     plugin::Plugin,
     response::{InnerResponse, Response},
