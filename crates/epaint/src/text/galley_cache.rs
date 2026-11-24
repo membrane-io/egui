@@ -213,7 +213,7 @@ impl GalleyCache {
                         leading_space: if ByteIndex(start) <= section_range.start {
                             *leading_space
                         } else {
-                            0.0.into()
+                            0.0
                         },
                         wrap_indent: *wrap_indent,
                         byte_range: new_range,

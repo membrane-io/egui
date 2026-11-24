@@ -126,7 +126,7 @@ impl LayoutJob {
     pub fn simple(text: String, font_id: FontId, color: Color32, wrap_width: f32) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0.into(),
+                leading_space: 0.0,
                 wrap_indent: 0.0,
                 byte_range: ByteRange::full(&text),
                 format: TextFormat::simple(font_id, color),
@@ -146,7 +146,7 @@ impl LayoutJob {
     pub fn simple_format(text: String, format: TextFormat) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0.into(),
+                leading_space: 0.0,
                 wrap_indent: 0.0,
                 byte_range: ByteRange::full(&text),
                 format,
@@ -162,7 +162,7 @@ impl LayoutJob {
     pub fn simple_singleline(text: String, font_id: FontId, color: Color32) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0.into(),
+                leading_space: 0.0,
                 wrap_indent: 0.0,
                 byte_range: ByteRange::full(&text),
                 format: TextFormat::simple(font_id, color),
@@ -178,7 +178,7 @@ impl LayoutJob {
     pub fn single_section(text: String, format: TextFormat) -> Self {
         Self {
             sections: vec![LayoutSection {
-                leading_space: 0.0.into(),
+                leading_space: 0.0,
                 wrap_indent: 0.0,
                 byte_range: ByteRange::full(&text),
                 format,
@@ -201,8 +201,6 @@ impl LayoutJob {
     /// `leading_space`, it is merged into that section instead of adding a new one.
     /// This keeps the section count down and lets text shaping (e.g. kerning) work
     /// across the appended text, since shaping is done per [`LayoutSection`].
-    // TODO(juan): Deprecate this in favor of push
-    // #[deprecated(note = "Use push or push_with_leading_space instead")]
     pub fn append(&mut self, text: &str, leading_space: f32, format: TextFormat) {
         let start = self.text.len();
         self.text += text;
@@ -218,29 +216,6 @@ impl LayoutJob {
             return;
         }
 
-        self.sections.push(LayoutSection {
-            leading_space: leading_space.into(),
-            wrap_indent: 0.0,
-            byte_range,
-            format,
-        });
-    }
-
-    /// Helper for adding a new section when building a [`LayoutJob`].
-    pub fn push(&mut self, text: &str, format: TextFormat) {
-        self.append(text, 0.0, format);
-    }
-
-    /// Helper for adding a new section when building a [`LayoutJob`].
-    pub fn push_with_leading_space(
-        &mut self,
-        text: &str,
-        leading_space: LeadingSpace,
-        format: TextFormat,
-    ) {
-        let start = self.text.len();
-        self.text += text;
-        let byte_range = ByteIndex(start)..ByteIndex(self.text.len());
         self.sections.push(LayoutSection {
             leading_space,
             wrap_indent: 0.0,
@@ -363,47 +338,6 @@ impl core::hash::Hash for LayoutJob {
 
 // ----------------------------------------------------------------------------
 
-/// Specifies how leading space is applied to a section.
-#[derive(Copy, Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-pub enum LeadingSpace {
-    /// Only the first row of this section will have this leading space.
-    FirstRow(f32),
-    /// All wrapped rows of this section will be indented by this amount.
-    Indent(f32),
-}
-
-impl LeadingSpace {
-    pub fn value(&self) -> f32 {
-        match self {
-            LeadingSpace::FirstRow(value) => *value,
-            LeadingSpace::Indent(value) => *value,
-        }
-    }
-}
-
-impl core::hash::Hash for LeadingSpace {
-    #[inline]
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            LeadingSpace::FirstRow(value) => {
-                0u8.hash(state);
-                OrderedFloat(*value).hash(state);
-            }
-            LeadingSpace::Indent(value) => {
-                1u8.hash(state);
-                OrderedFloat(*value).hash(state);
-            }
-        }
-    }
-}
-
-impl From<f32> for LeadingSpace {
-    fn from(value: f32) -> Self {
-        LeadingSpace::FirstRow(value)
-    }
-}
-
 /// A contiguous range of [`LayoutJob::text`] that shares the same [`TextFormat`].
 ///
 /// The sections of a [`LayoutJob`] are ordered and together cover the whole text
@@ -417,7 +351,7 @@ impl From<f32> for LeadingSpace {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct LayoutSection {
     /// Can be used for first row indentation.
-    pub leading_space: LeadingSpace,
+    pub leading_space: f32,
 
     /// Where the rows that a paragraph wraps onto start, in points.
     ///
@@ -447,7 +381,7 @@ impl core::hash::Hash for LayoutSection {
             byte_range,
             format,
         } = self;
-        leading_space.hash(state);
+        OrderedFloat(*leading_space).hash(state);
         OrderedFloat(*wrap_indent).hash(state);
         byte_range.hash(state);
         format.hash(state);
@@ -586,12 +520,12 @@ pub struct TextFormat {
 
     pub background: Color32,
 
-    /// Amount to expand background fill by: `x` on the left and right, `y` on the top and bottom.
+    /// Amount to expand background fill by.
     ///
     /// This does not affect the layout, so the background may overlap neighboring text.
     ///
-    /// Default: `Vec2::new(1.0, 1.0)`
-    pub expand_bg: Vec2,
+    /// Default: 1.0
+    pub expand_bg: f32,
 
     /// Inner margin of the [`Self::background`]: the space between the text and the edges of
     /// the background. A positive margin makes the background bigger than the text.
@@ -609,39 +543,15 @@ pub struct TextFormat {
 
     /// Corner radius of the [`Self::background`].
     ///
-    /// If this is not [`CornerRadius::ZERO`], it replaces [`Self::bg_corner_radius`].
-    ///
     /// Default: [`CornerRadius::ZERO`]
     pub background_corner_radius: CornerRadius,
 
     /// Outline of the [`Self::background`], painted inside its edge.
     ///
-    /// MEMBRANE: this paints with or without a fill. If [`Self::bg_stroke`] is also set, both
-    /// paint, and this outline is on top.
-    ///
     /// Default: [`Stroke::NONE`]
     pub background_stroke: Stroke,
 
     pub coords: VariationCoords,
-
-    /// Corner radius for background rectangles.
-    ///
-    /// MEMBRANE: this applies only when [`Self::background_corner_radius`] is
-    /// [`CornerRadius::ZERO`].
-    ///
-    /// Default: 0 (no rounding)
-    pub bg_corner_radius: u8,
-
-    /// Border drawn inside the edge of a background rectangle.
-    ///
-    /// The background rectangle takes the stroke colour, and the fill sits inside it, so the
-    /// border follows `bg_corner_radius`. A fill that is not opaque lets the stroke colour through.
-    ///
-    /// MEMBRANE: this paints only when [`Self::background`] is not transparent. For an outline
-    /// without a fill, use [`Self::background_stroke`].
-    ///
-    /// Default: [`Stroke::NONE`] (no border)
-    pub bg_stroke: Stroke,
 
     pub italics: bool,
 
@@ -677,13 +587,11 @@ impl Default for TextFormat {
             line_height: None,
             color: Color32::GRAY,
             background: Color32::TRANSPARENT,
-            expand_bg: Vec2::new(1.0, 1.0),
+            expand_bg: 1.0,
             background_margin: Margin::ZERO,
             background_corner_radius: CornerRadius::ZERO,
             background_stroke: Stroke::NONE,
             coords: VariationCoords::default(),
-            bg_corner_radius: 0,
-            bg_stroke: Stroke::NONE,
             italics: false,
             underline: Stroke::NONE,
             strikethrough: Stroke::NONE,
@@ -706,8 +614,6 @@ impl core::hash::Hash for TextFormat {
             background_corner_radius,
             background_stroke,
             coords,
-            bg_corner_radius,
-            bg_stroke,
             italics,
             underline,
             strikethrough,
@@ -720,14 +626,11 @@ impl core::hash::Hash for TextFormat {
         }
         color.hash(state);
         background.hash(state);
-        emath::OrderedFloat(expand_bg.x).hash(state);
-        emath::OrderedFloat(expand_bg.y).hash(state);
+        emath::OrderedFloat(*expand_bg).hash(state);
         background_margin.hash(state);
         background_corner_radius.hash(state);
         background_stroke.hash(state);
         coords.hash(state);
-        bg_corner_radius.hash(state);
-        bg_stroke.hash(state);
         italics.hash(state);
         underline.hash(state);
         strikethrough.hash(state);
@@ -1106,18 +1009,6 @@ impl Glyph {
     #[inline]
     pub fn logical_rect(&self) -> Rect {
         Rect::from_min_size(self.pos - vec2(0.0, self.font_ascent), self.size())
-    }
-
-    /// Extents for painting [`TextFormat::background`].
-    ///
-    /// Uses [`Self::font_height`] instead of [`Self::line_height`] so a custom
-    /// [`TextFormat::line_height`] only affects row spacing and alignment, not background size.
-    #[inline]
-    pub fn background_rect(&self) -> Rect {
-        Rect::from_min_size(
-            self.pos - vec2(0.0, self.font_ascent),
-            vec2(self.advance_width, self.font_height),
-        )
     }
 }
 

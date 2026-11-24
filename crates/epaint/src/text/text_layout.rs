@@ -72,14 +72,6 @@ struct Paragraph {
     /// In case of an empty paragraph ("\n"), use this as height.
     pub empty_paragraph_height: f32,
 
-    /// MEMBRANE: indentation of the paragraph, from [`super::LeadingSpace::Indent`]. This is only
-    /// relevant if the paragraph has line breaks (i.e. not enough horizontal space). If the first
-    /// line also needs to be indented (usually the case), add whitespace or leading space before it.
-    ///
-    /// This moves the glyphs of each wrapped row inside the row. It adds to
-    /// [`Self::wrap_indent`], which moves the wrapped row itself.
-    pub indentation: f32,
-
     /// Where the rows that the paragraph wraps onto start, in points.
     ///
     /// See [`LayoutSection::wrap_indent`].
@@ -93,7 +85,6 @@ impl Paragraph {
             section_index_at_start,
             glyphs: vec![],
             empty_paragraph_height: 0.0,
-            indentation: 0.0,
             wrap_indent: 0.0,
         }
     }
@@ -558,15 +549,8 @@ fn layout_section(
         paragraph.empty_paragraph_height = line_height;
         paragraph.wrap_indent = *wrap_indent;
     }
-    match leading_space {
-        super::LeadingSpace::FirstRow(value) => {
-            paragraph.cursor_x_px += *value * pixels_per_point;
-        }
-        super::LeadingSpace::Indent(value) => {
-            paragraph.indentation = *value;
-        }
-    }
-    paragraph.cursor_x_px += format.background_margin.left as f32 * pixels_per_point;
+    paragraph.cursor_x_px +=
+        (leading_space + format.background_margin.left as f32) * pixels_per_point;
 
     let section_text = &job.text[byte_range.as_usize()];
     let mut ctx = ShapingContext {
@@ -774,15 +758,10 @@ fn line_break(
     let mut row_break_candidates = RowBreakCandidates::default();
 
     let mut first_row_indentation = paragraph.glyphs[0].pos.x;
-    let mut row_start_x = paragraph.indentation;
+    let mut row_start_x = 0.0;
     let mut row_start_idx = 0;
 
-    // Rows already placed by previous paragraphs; this paragraph's first row is the one at this index.
-    //
     // The first row of the paragraph is not indented, the rows it wraps onto are.
-    // MEMBRANE: two indents apply to a wrapped row, and they add up. `paragraph.wrap_indent`
-    // (upstream) moves the row with `PlacedRow::pos`. `paragraph.indentation` (the fork's
-    // `LeadingSpace::Indent`) moves the glyphs inside the row.
     let first_out_row = out_rows.len();
     let row_indent = |out_rows: &Vec<PlacedRow>| {
         if first_out_row < out_rows.len() {
@@ -798,8 +777,7 @@ fn line_break(
             break;
         }
 
-        let potential_row_width = row_indent(out_rows) + paragraph.glyphs[i].max_x() - row_start_x
-            + paragraph.indentation;
+        let potential_row_width = row_indent(out_rows) + paragraph.glyphs[i].max_x() - row_start_x;
 
         if wrap_width < potential_row_width {
             // Row break:
@@ -823,18 +801,11 @@ fn line_break(
                 first_row_indentation = 0.0;
             } else if let Some(last_kept_index) = row_break_candidates.get(job.wrap.break_anywhere)
             {
-                // The paragraph's first row was already positioned when creating the Paragraph;
-                // only the wrapped rows that follow have to be moved to the indentation.
-                let x_offset = if out_rows.len() == first_out_row {
-                    0.0
-                } else {
-                    paragraph.indentation - row_start_x
-                };
                 let glyphs: Vec<Glyph> = paragraph.glyphs[row_start_idx..=last_kept_index]
                     .iter()
                     .copied()
                     .map(|mut glyph| {
-                        glyph.pos.x += x_offset;
+                        glyph.pos.x -= row_start_x;
                         glyph
                     })
                     .collect();
@@ -873,26 +844,19 @@ fn line_break(
         if job.wrap.max_rows <= out_rows.len() {
             *elided = true; // can't fit another row
         } else {
-            // The paragraph's first row was already positioned when creating the Paragraph;
-            // only the wrapped rows that follow have to be moved to the indentation.
-            let x_offset = if out_rows.len() == first_out_row {
-                0.0
-            } else {
-                paragraph.indentation - row_start_x
-            };
+            let paragraph_min_x = paragraph.glyphs[row_start_idx].pos.x - row_start_x;
+            let paragraph_max_x = paragraph.glyphs.last().unwrap().max_x() - row_start_x;
+
             let glyphs: Vec<Glyph> = paragraph.glyphs[row_start_idx..]
                 .iter()
                 .copied()
                 .map(|mut glyph| {
-                    glyph.pos.x += x_offset;
+                    glyph.pos.x -= row_start_x + paragraph_min_x;
                     glyph
                 })
                 .collect();
 
             let section_index_at_start = glyphs[0].section_index;
-            // TODO(juan): is 0.0 correct here?
-            let paragraph_min_x = 0.0; //glyphs[0].pos.x;
-            let paragraph_max_x = glyphs.last().unwrap().max_x();
 
             out_rows.push(PlacedRow {
                 pos: pos2(row_indent(out_rows) + paragraph_min_x, 0.0),
@@ -908,19 +872,18 @@ fn line_break(
     }
 }
 
-/// MEMBRANE: the [`LeadingSpace::FirstRow`] space before the glyph at `index`, if that glyph is the first glyph of its
-/// section. A wrapped row that starts with this glyph keeps the space, because that row is the first row of the
-/// section. A negative space moves a section back over the text before it, and a row start has no text before it,
-/// so the row keeps no negative space.
+/// MEMBRANE: the [`LayoutSection::leading_space`] before the glyph at `index`, if that glyph is the
+/// first glyph of its section. A wrapped row that starts with this glyph keeps the space, because
+/// that row is the first row of the section. A negative space moves a section back over the text
+/// before it, and a row start has no text before it, so the row keeps no negative space.
 fn section_leading_space(job: &LayoutJob, glyphs: &[Glyph], index: usize) -> f32 {
     let glyph = &glyphs[index];
     if index > 0 && glyphs[index - 1].section_index == glyph.section_index {
         return 0.0;
     }
-    match job.sections[glyph.section_index as usize].leading_space {
-        super::LeadingSpace::FirstRow(value) => value.max(0.0),
-        super::LeadingSpace::Indent(_) => 0.0,
-    }
+    job.sections[glyph.section_index as usize]
+        .leading_space
+        .max(0.0)
 }
 
 /// Trims the last glyphs in the row and replaces it with an overflow character (e.g. `…`).
@@ -1334,78 +1297,37 @@ fn add_row_backgrounds(
     let mut end_run = |start: Option<(&TextFormat, Rect)>, stop_x: f32| {
         if let Some((format, start_rect)) = start {
             let rect = Rect::from_min_max(start_rect.left_top(), pos2(stop_x, start_rect.bottom()));
-            // MEMBRANE: the upstream `background_margin` applies first, then the fork's
-            // `expand_bg: Vec2` expands the result (x horizontally, y vertically).
             let rect = (rect + MarginF32::from(format.background_margin))
-                .expand2(format.expand_bg)
+                .expand(format.expand_bg)
                 .round_to_pixels(point_scale.pixels_per_point());
-            // MEMBRANE: the fork and upstream both have a corner radius and a stroke for the
-            // background. These rules combine them:
-            // * A non-zero upstream `background_corner_radius` wins over the fork's
-            //   `bg_corner_radius`, and the fill is a feathered path as upstream paints it.
-            //   Otherwise the fork's `bg_corner_radius` applies with the fork's rounded mesh.
-            // * The fork's `bg_stroke` paints only with a fill: the rectangle takes the stroke
-            //   colour, and the fill sits inside it.
-            // * The upstream `background_stroke` paints after that, as an outline inside the
-            //   edge, with or without a fill. If both strokes are set, both paint, and the
-            //   upstream outline is on top.
-            let fill = |mesh: &mut Mesh,
-                        scratch: &mut BackgroundScratch,
-                        rect: Rect,
-                        inset: u8,
-                        color: Color32| {
-                if format.background_corner_radius == CornerRadius::ZERO {
-                    mesh.add_colored_rect_with_corners(
-                        rect,
-                        format.bg_corner_radius.saturating_sub(inset),
-                        color,
-                    );
-                } else {
-                    let BackgroundScratch { points, path } = scratch;
-                    let feathering = 1.0 / point_scale.pixels_per_point();
+            let stroke = format.background_stroke;
+            if format.background_corner_radius == CornerRadius::ZERO && stroke.is_empty() {
+                // Common-case optimization
+                mesh.add_colored_rect(rect, format.background);
+            } else {
+                let BackgroundScratch { points, path } = scratch;
+                let feathering = 1.0 / point_scale.pixels_per_point();
+                if format.background != Color32::TRANSPARENT {
                     crate::tessellator::path::rounded_rectangle(
                         points,
-                        RoundedRect::new(rect, format.background_corner_radius - inset),
+                        RoundedRect::new(rect, format.background_corner_radius),
                     );
                     path.clear();
                     path.add_line_loop(points);
-                    path.fill(feathering, color, mesh);
+                    path.fill(feathering, format.background, mesh);
                 }
-            };
-            if format.background != Color32::TRANSPARENT {
-                let stroke = format.bg_stroke;
-                if stroke.is_empty() {
-                    fill(mesh, scratch, rect, 0, format.background);
-                } else {
-                    // A `Mesh` holds triangles and cannot stroke an outline, so the border is the
-                    // background rectangle in the stroke colour with the fill inset inside it.
-                    // That keeps the corners rounded, which four separate edge rectangles would not.
-                    let width = point_scale.round_to_pixel(stroke.width);
-                    fill(mesh, scratch, rect, 0, stroke.color);
-                    let inner = rect.shrink(width);
-                    if inner.is_positive() {
-                        fill(mesh, scratch, inner, width as u8, format.background);
-                    }
+                if !stroke.is_empty() {
+                    // Paint the stroke inside the background, so it never reaches outside it:
+                    let half_width = 0.5 * stroke.width;
+                    let corner_radius = format.background_corner_radius - half_width as u8;
+                    crate::tessellator::path::rounded_rectangle(
+                        points,
+                        RoundedRect::new(rect.shrink(half_width), corner_radius),
+                    );
+                    path.clear();
+                    path.add_line_loop(points);
+                    path.stroke_closed(feathering, &stroke.into(), mesh);
                 }
-            }
-            let stroke = format.background_stroke;
-            if !stroke.is_empty() {
-                let corner_radius = if format.background_corner_radius == CornerRadius::ZERO {
-                    CornerRadius::same(format.bg_corner_radius)
-                } else {
-                    format.background_corner_radius
-                };
-                let BackgroundScratch { points, path } = &mut *scratch;
-                let feathering = 1.0 / point_scale.pixels_per_point();
-                // Paint the stroke inside the background, so it never reaches outside it:
-                let half_width = 0.5 * stroke.width;
-                crate::tessellator::path::rounded_rectangle(
-                    points,
-                    RoundedRect::new(rect.shrink(half_width), corner_radius - half_width as u8),
-                );
-                path.clear();
-                path.add_line_loop(points);
-                path.stroke_closed(feathering, &stroke.into(), mesh);
             }
         }
     };
@@ -1415,7 +1337,7 @@ fn add_row_backgrounds(
 
     for glyph in &row.glyphs {
         let format = &job.sections[glyph.section_index as usize].format;
-        let rect = glyph.background_rect();
+        let rect = glyph.logical_rect();
 
         if !has_background(format) {
             end_run(run_start.take(), last_rect.right());
@@ -1427,8 +1349,6 @@ fn add_row_backgrounds(
                 && start_format.expand_bg == format.expand_bg
                 && start_format.background_margin == format.background_margin
                 && start_format.background_corner_radius == format.background_corner_radius
-                && start_format.bg_corner_radius == format.bg_corner_radius
-                && start_format.bg_stroke == format.bg_stroke
             {
                 // continue the same background rectangle
             } else {
@@ -1826,7 +1746,7 @@ mod tests {
             let start = job.text.len();
             job.text += text;
             job.sections.push(LayoutSection {
-                leading_space: 0.0.into(),
+                leading_space: 0.0,
                 wrap_indent,
                 byte_range: ByteIndex(start)..ByteIndex(job.text.len()),
                 format: TextFormat::simple(FontId::proportional(14.0), Color32::WHITE),
@@ -2524,18 +2444,20 @@ mod tests {
         assert_eq!(galley.rows[1].glyphs[0].pos.x, 20.0);
     }
 
+    /// The leading space of a section that starts a wrapped row adds to the `wrap_indent` of the
+    /// paragraph.
     #[test]
-    fn test_wrapped_section_keeps_leading_space_after_indent() {
+    fn test_wrapped_section_keeps_leading_space_after_wrap_indent() {
         let pixels_per_point = 1.0;
         let mut fonts = FontsImpl::new(TextOptions::default(), FontDefinitions::default());
         let mut layout_job = LayoutJob::default();
-        layout_job.push_with_leading_space("", LeadingSpace::Indent(10.0), TextFormat::default());
         layout_job.append("aaaa aaaa ", 0.0, TextFormat::default());
+        layout_job.sections[0].wrap_indent = 10.0;
         layout_job.append("bbbb", 20.0, TextFormat::default());
         layout_job.wrap.max_width = 70.0;
         let galley = layout(&mut fonts, pixels_per_point, layout_job.into());
         assert!(galley.rows[1].text().starts_with("bbbb"));
-        assert_eq!(galley.rows[1].glyphs[0].pos.x, 30.0);
+        assert_eq!(galley.rows[1].pos.x + galley.rows[1].glyphs[0].pos.x, 30.0);
     }
 
     #[test]

@@ -1,6 +1,5 @@
 use alloc::{borrow::Cow, sync::Arc};
 use core::fmt::Formatter;
-use emath::Vec2;
 use epaint::text::{IntoTag, TextFormat, VariationCoords};
 
 use crate::{
@@ -32,7 +31,7 @@ pub struct RichText {
     family: Option<FontFamily>,
     text_style: Option<TextStyle>,
     background_color: Color32,
-    expand_bg: Vec2,
+    expand_bg: f32,
     text_color: Option<Color32>,
     coords: VariationCoords,
     code: bool,
@@ -54,7 +53,7 @@ impl Default for RichText {
             family: Default::default(),
             text_style: Default::default(),
             background_color: Default::default(),
-            expand_bg: Vec2::splat(1.0),
+            expand_bg: 1.0,
             text_color: Default::default(),
             coords: Default::default(),
             code: Default::default(),
@@ -462,7 +461,7 @@ impl RichText {
             if code {
                 (
                     style.visuals.code.bg_color,
-                    Vec2::ZERO,
+                    0.0,
                     style.visuals.code.margin,
                     style.visuals.code.corner_radius,
                     style.visuals.code.stroke,
@@ -507,8 +506,6 @@ impl RichText {
                 background_corner_radius,
                 background_stroke,
                 coords,
-                bg_corner_radius: 0,
-                bg_stroke: crate::Stroke::NONE,
                 italics,
                 underline,
                 strikethrough,

@@ -628,7 +628,7 @@ impl Highlighter {
                     egui::Stroke::NONE
                 };
                 job.sections.push(LayoutSection {
-                    leading_space: 0.0.into(),
+                    leading_space: 0.0,
                     wrap_indent: 0.0,
                     byte_range: as_byte_range(text, range),
                     format: TextFormat {
